@@ -42,5 +42,10 @@ pub fn make_nick_for_address(addr: &PduAddress) -> String {
             _ => ret.push('_')
         }
     }
+    if let Some(ch) = ret.chars().nth(1) {
+        if ch.is_ascii_alphabetic() {
+            ret.remove(0);
+        }
+    }
     ret
 }
