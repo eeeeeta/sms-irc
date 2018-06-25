@@ -39,7 +39,9 @@ pub fn make_nick_for_address(addr: &PduAddress) -> String {
             '^' => ret.push('^'),
             '`' => ret.push('`'),
             '|' => ret.push('|'),
-            x if x.is_alphanumeric() && x.is_ascii() => ret.push(x),
+            x @ 'A'...'Z' => ret.push(x),
+            x @ 'a'...'z' => ret.push(x),
+            x @ '0'...'9' => ret.push(x),
             _ => ret.push('_')
         }
     }
