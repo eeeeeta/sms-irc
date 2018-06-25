@@ -2,7 +2,7 @@
 
 use irc::client::PackedIrcClient;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
-use comm::{ModemCommand, ContactManagerCommand, InitParameters};
+use comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, InitParameters};
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use store::Store;
 use failure::Error;
@@ -28,6 +28,7 @@ pub struct ContactManager {
     addr: PduAddress,
     store: Store,
     id: bool,
+    cf_tx: UnboundedSender<ContactFactoryCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
     pub tx: UnboundedSender<ContactManagerCommand>,
     rx: UnboundedReceiver<ContactManagerCommand>
@@ -170,6 +171,10 @@ impl ContactManager {
                 self.change_nick(msg[1].into())?;
                 self.irc.0.send_notice(&self.admin, "Done.")?;
             },
+            "!die" => {
+                self.cf_tx.unbounded_send(ContactFactoryCommand::DropContact(self.addr.clone()))
+                    .unwrap();
+            },
             unrec => {
                 self.irc.0.send_notice(&self.admin, &format!("Unknown command: {}", unrec))?;
             }
@@ -238,6 +243,7 @@ impl ContactManager {
         };
         let (tx, rx) = mpsc::unbounded();
         let modem_tx = p.cm.modem_tx.clone();
+        let cf_tx = p.cm.cf_tx.clone();
         let admin = p.cfg.admin_nick.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(recip.nick),
@@ -271,7 +277,7 @@ impl ContactManager {
                             irc: cli,
                             irc_stream,
                             id: false,
-                            addr, store, modem_tx, tx, rx, admin, nick
+                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx
                         })
                     },
                     Err(e) => {

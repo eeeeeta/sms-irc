@@ -39,6 +39,7 @@ impl Future for ContactFactory {
                 ProcessMessages => self.process_messages()?,
                 LoadRecipients => self.load_recipients()?,
                 MakeContact(addr) => self.make_contact(addr)?,
+                DropContact(addr) => self.drop_contact(addr)?
             }
         }
         let mut to_remove = vec![];
@@ -119,6 +120,12 @@ impl ContactFactory {
             ContactManager::new(recip, ip)
         };
         self.contacts_starting.insert(addr, Box::new(cfut));
+        Ok(())
+    }
+    fn drop_contact(&mut self, addr: PduAddress) -> Result<()> {
+        info!("Dropping contact {}", addr);
+        self.store.delete_recipient_with_addr(&addr)?;
+        self.contacts.remove(&addr);
         Ok(())
     }
     fn make_contact(&mut self, addr: PduAddress) -> Result<()> {

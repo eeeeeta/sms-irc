@@ -109,6 +109,18 @@ impl Store {
             .load(&*conn)?;
         Ok(res)
     }
+    pub fn delete_recipient_with_addr(&mut self, addr: &PduAddress) -> Result<()> {
+        use schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+        let num = util::normalize_address(addr);
+
+        let rows_affected = ::diesel::delete(recipients.filter(phone_number.eq(num)))
+            .execute(&*conn)?;
+        if rows_affected == 0 {
+            return Err(format_err!("no rows affected deleting recip {}", addr));
+        }
+        Ok(())
+    }
     pub fn delete_message(&mut self, mid: i32) -> Result<()> {
         use schema::messages::dsl::*;
         let conn = self.inner.get()?;

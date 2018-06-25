@@ -20,6 +20,7 @@ pub enum ModemCommand {
 pub enum ContactFactoryCommand {
     ProcessMessages,
     MakeContact(PduAddress),
+    DropContact(PduAddress),
     LoadRecipients
 }
 pub enum ContactManagerCommand {
