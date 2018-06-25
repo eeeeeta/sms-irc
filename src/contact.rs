@@ -12,6 +12,7 @@ use std::default::Default;
 use irc::client::{IrcClient, ClientStream, Client};
 use irc::client::ext::ClientExt;
 use irc::proto::command::Command;
+use irc::proto::response::Response;
 use irc::proto::message::Message;
 use models::Message as OurMessage;
 use models::Recipient;
@@ -28,6 +29,7 @@ pub struct ContactManager {
     addr: PduAddress,
     store: Store,
     id: bool,
+    connected: bool,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
     pub tx: UnboundedSender<ContactManagerCommand>,
@@ -136,6 +138,11 @@ impl ContactManager {
     fn process_messages(&mut self) -> Result<()> {
         use huawei_modem::convert::TryFrom;
 
+        if !self.connected {
+            debug!("Not processing messages yet; not connected");
+            return Ok(());
+        }
+
         let msgs = self.store.get_messages_for_recipient(&self.addr)?;
         for msg in msgs {
             debug!("Processing message #{}", msg.id);
@@ -183,6 +190,12 @@ impl ContactManager {
     }
     fn handle_irc_message(&mut self, im: Message) -> Result<()> {
         match im.command {
+            Command::Response(Response::RPL_ENDOFMOTD, _, _) |
+                Command::Response(Response::ERR_NOMOTD, _, _) => {
+                debug!("Contact {} connected", self.addr);
+                self.connected = true;
+                self.process_messages()?;
+            },
             Command::NICK(nick) => {
                 if let Some(from) = im.prefix {
                     let from = from.split("!").collect::<Vec<_>>();
@@ -277,6 +290,7 @@ impl ContactManager {
                             irc: cli,
                             irc_stream,
                             id: false,
+                            connected: false,
                             addr, store, modem_tx, tx, rx, admin, nick, cf_tx
                         })
                     },
