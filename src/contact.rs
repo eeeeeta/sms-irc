@@ -260,6 +260,7 @@ impl ContactManager {
         let admin = p.cfg.admin_nick.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(recip.nick),
+            alt_nicks: Some(vec!["smsirc_fallback".to_string()]),
             realname: Some(addr.to_string()),
             server: Some(p.cfg.irc_hostname.clone()),
             password: p.cfg.irc_password.clone(),
