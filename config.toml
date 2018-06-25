@@ -1,7 +1,0 @@
-database_url = "postgresql://eeeeeta@localhost/smsirc"
-irc_hostname = "192.168.42.15"
-modem_path = "/dev/ttyUSB2"
-admin_nick = "eeeeeta"
-irc_channel = "#smsirc"
-cmgl_secs = 30
-logging = "sms_irc=debug"
