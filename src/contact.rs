@@ -29,6 +29,7 @@ pub struct ContactManager {
     addr: PduAddress,
     store: Store,
     id: bool,
+    admin_is_online: bool,
     connected: bool,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
@@ -143,6 +144,10 @@ impl ContactManager {
             debug!("Not processing messages yet; not connected");
             return Ok(());
         }
+        if !self.admin_is_online {
+            debug!("Not processing messages; admin offline");
+            return Ok(());
+        }
 
         let msgs = self.store.get_messages_for_recipient(&self.addr)?;
         for msg in msgs {
@@ -189,6 +194,11 @@ impl ContactManager {
         }
         Ok(())
     }
+    fn initialize_watch(&mut self) -> Result<()> {
+        debug!("Attempting to WATCH +{}", self.admin);
+        self.irc.0.send(Command::Raw("WATCH".into(), vec![format!("+{}", self.admin)], None))?;
+        Ok(())
+    }
     fn handle_irc_message(&mut self, im: Message) -> Result<()> {
         match im.command {
             Command::Response(Response::RPL_ENDOFMOTD, _, _) |
@@ -196,6 +206,7 @@ impl ContactManager {
                 debug!("Contact {} connected", self.addr);
                 self.connected = true;
                 self.process_messages()?;
+                self.initialize_watch()?;
             },
             Command::NICK(nick) => {
                 if let Some(from) = im.prefix {
@@ -239,6 +250,40 @@ impl ContactManager {
                         debug!("{} -> {}: {}", from[0], self.addr, mesg); 
                         self.modem_tx.unbounded_send(ModemCommand::SendMessage(self.addr.clone(), mesg)).unwrap();
                     }
+                }
+            },
+            Command::Raw(cmd, args, suffix) => {
+                trace!("Raw response: {} {:?} {:?}", cmd, args, suffix);
+                if args.len() < 2 {
+                    return Ok(());
+                }
+                match &cmd as &str {
+                    "600" | "604" => { // RPL_LOGON / RPL_NOWON
+                        if args[1] == self.admin {
+                            debug!("Admin {} is online.", self.admin);
+                            if !self.admin_is_online {
+                                info!("Admin {} has returned; sending queued messages.", self.admin);
+                                self.admin_is_online = true;
+                                self.process_messages()?;
+                            }
+                        }
+                    },
+                    "601" | "605" => { // RPL_LOGOFF / RPL_NOWOFF
+                        if args[1] == self.admin {
+                            debug!("Admin {} is offline.", self.admin);
+                            if self.admin_is_online {
+                                self.admin_is_online = false;
+                                warn!("Admin {} has gone offline; queuing messages until their return.", self.admin);
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            },
+            Command::Response(Response::ERR_UNKNOWNCOMMAND, args, suffix) => {
+                trace!("Unknown command response: {:?} {:?}", args, suffix);
+                if args.len() == 2 && args[1] == "WATCH" {
+                    warn!("WATCH not supported by server!");
                 }
             },
             Command::ERROR(msg) => {
@@ -293,6 +338,8 @@ impl ContactManager {
                             irc_stream,
                             id: false,
                             connected: false,
+                            // Assume admin is online to start with
+                            admin_is_online: true,
                             addr, store, modem_tx, tx, rx, admin, nick, cf_tx
                         })
                     },
