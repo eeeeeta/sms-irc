@@ -53,6 +53,7 @@ impl Future for ContactManager {
             let cmc = cmc.ok_or(format_err!("contactmanager rx died"))?;
             self.handle_int_rx(cmc)?;
         }
+        while let Async::Ready(_) = self.irc.1.poll()? {}
         Ok(Async::NotReady)
     }
 }
