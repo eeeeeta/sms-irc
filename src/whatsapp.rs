@@ -251,7 +251,7 @@ impl WhatsappManager {
         let mut list = vec![];
         for (jid, gmeta) in self.chats.iter() {
             let bstatus = if let Some(grp) = self.store.get_group_by_jid_opt(jid)? {
-                format!("\x02\x0309group bridged to #{}\x0f", grp.channel)
+                format!("\x02\x0309group bridged to {}\x0f", grp.channel)
             }
             else {
                 if jid.is_group {

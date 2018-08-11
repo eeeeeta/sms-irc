@@ -69,6 +69,10 @@ impl ContactManager {
             .unwrap()
     }
     fn process_groups(&mut self) -> Result<()> {
+        if !self.connected {
+            debug!("Not processing group changes yet; not connected.");
+            return Ok(());
+        }
         debug!("Processing group changes");
         let mut chans = vec![];
         for grp in self.store.get_groups_for_recipient(&self.addr)? {
@@ -266,6 +270,7 @@ impl ContactManager {
                 self.process_messages()?;
                 self.initialize_watch()?;
                 self.update_away()?;
+                self.process_groups()?;
             },
             Command::NICK(nick) => {
                 if let Some(from) = im.prefix {
@@ -396,10 +401,6 @@ impl ContactManager {
                     Ok(cli) => {
                         let irc_stream = cli.0.stream();
                         let nick = cli.0.current_nickname().into();
-                        tx.unbounded_send(ContactManagerCommand::ProcessMessages)
-                            .unwrap();
-                        tx.unbounded_send(ContactManagerCommand::ProcessGroups)
-                            .unwrap();
                         Ok(ContactManager {
                             irc: cli,
                             irc_stream,

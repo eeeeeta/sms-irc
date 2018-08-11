@@ -10,6 +10,7 @@ use futures::{self, Future, Async, Poll, Stream};
 use futures::future::Either;
 use irc::client::{IrcClient, ClientStream, Client};
 use irc::proto::command::Command;
+use irc::proto::response::Response;
 use irc::client::data::config::Config as IrcConfig;
 use irc::proto::message::Message;
 use irc::client::ext::ClientExt;
@@ -35,8 +36,10 @@ pub struct ControlBot {
     chan: String,
     admin: String,
     channels: Vec<String>,
+    log_backlog: Vec<String>,
     store: Store,
     id: bool,
+    connected: bool,
     rx: UnboundedReceiver<ControlBotCommand>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
@@ -147,6 +150,13 @@ impl ControlBot {
     }
     fn handle_irc_message(&mut self, im: Message) -> Result<()> {
         match im.command {
+            Command::Response(Response::RPL_ENDOFMOTD, _, _) |
+                Command::Response(Response::ERR_NOMOTD, _, _) => {
+                debug!("Control bot connected");
+                self.connected = true;
+                self.clear_log_backlog()?;
+                self.process_groups()?;
+            },
             Command::PRIVMSG(target, mesg) => {
                 if let Some(from) = im.prefix {
                     let from = from.split("!").collect::<Vec<_>>();
@@ -178,12 +188,23 @@ impl ControlBot {
         }
         Ok(())
     }
+    fn clear_log_backlog(&mut self) -> Result<()> {
+        for log in self.log_backlog.drain(0..) {
+            self.irc.0.send_notice(&self.chan, &log)?;
+        }
+        Ok(())
+    }
     fn handle_int_rx(&mut self, m: ControlBotCommand) -> Result<()> {
         use self::ControlBotCommand::*;
 
         match m {
             Log(log) => {
-                self.irc.0.send_notice(&self.chan, &log)?;
+                if !self.connected {
+                    self.log_backlog.push(log);
+                }
+                else {
+                    self.irc.0.send_notice(&self.chan, &log)?;
+                }
             },
             ReportFailure(err) => {
                 self.irc.0.send_notice(&self.admin, &format!("\x02\x0304{}\x0f", err))?;
@@ -204,7 +225,6 @@ impl ControlBot {
     pub fn new(p: InitParameters) -> impl Future<Item = Self, Error = Error> {
         let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
-        let cb_tx = p.cm.cb_tx.clone();
         let m_tx = p.cm.modem_tx.clone();
         let rx = p.cm.cb_rx.take().unwrap();
         let admin = p.cfg.admin_nick.clone();
@@ -231,13 +251,13 @@ impl ControlBot {
                 match res {
                     Ok(cli) => {
                         let irc_stream = cli.0.stream();
-                        cb_tx.unbounded_send(ControlBotCommand::ProcessGroups)
-                            .unwrap();
                         Ok(ControlBot {
                             irc: cli,
                             irc_stream,
                             id: false,
+                            connected: false,
                             channels: vec![],
+                            log_backlog: vec![],
                             cf_tx, m_tx, rx, admin, chan, store, wa_tx
                         })
                     },
