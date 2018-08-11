@@ -217,10 +217,10 @@ impl WhatsappManager {
 
         trace!("processing WA message: {:?}", msg);
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
-        let WaMessage { direction, content, .. } = msg;
+        let WaMessage { direction, content, id, .. } = msg;
         if let Direction::Receiving(peer) = direction {
             debug!("got message from peer {:?}", peer);
-            let (from, group) = match peer {
+            let (from, group) = match peer.clone() {
                 Peer::Individual(j) => (j, None),
                 Peer::Group { group, participant } => (participant, Some(group))
             };
@@ -247,6 +247,9 @@ impl WhatsappManager {
             }
             else {
                 warn!("couldn't make address for jid {}", from.to_string());
+            }
+            if let Some(ref mut conn) = self.conn {
+                conn.send_message_read(id, peer);
             }
         }
         Ok(())
