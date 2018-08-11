@@ -126,6 +126,9 @@ impl WhatsappManager {
             let (conn, _) = connection::with_persistent_session(wap, WhatsappHandler { tx }); 
             self.conn = Some(conn);
         }
+        else {
+            info!("WhatsApp is not enabled.");
+        }
         Ok(())
     }
     fn start_registration(&mut self) -> Result<()> {
