@@ -219,6 +219,7 @@ impl WhatsappManager {
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
         let WaMessage { direction, content, .. } = msg;
         if let Direction::Receiving(peer) = direction {
+            debug!("got message from peer {:?}", peer);
             let (from, group) = match peer {
                 Peer::Individual(j) => (j, None),
                 Peer::Group { group, participant } => (participant, Some(group))
@@ -243,6 +244,9 @@ impl WhatsappManager {
                 self.store.store_plain_message(&addr, &text, group)?;
                 self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                     .unwrap();
+            }
+            else {
+                warn!("couldn't make address for jid {}", from.to_string());
             }
         }
         Ok(())
