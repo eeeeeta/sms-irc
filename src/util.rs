@@ -7,12 +7,7 @@ pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
 pub fn jid_to_address(jid: &Jid) -> Option<PduAddress> {
     if let Some(pn) = jid.phonenumber() {
-        let toa = AddressType::default();
-        let num = PhoneNumber::from(pn.as_bytes());
-        Some(PduAddress {
-            type_addr: toa,
-            number: num
-        })
+        Some(pn.parse().unwrap())
     }
     else {
         None
