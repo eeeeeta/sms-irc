@@ -188,6 +188,7 @@ impl ModemManager {
                       .map_err(|e| e.into()));
         }
         let a1 = addr.clone();
+        let cb_tx = self.cb_tx.clone();
         let fut = futures::future::join_all(futs)
             .map(move |res| {
                 info!("Message to {} sent!", a1);
@@ -195,6 +196,9 @@ impl ModemManager {
             }).map_err(move |e: ::failure::Error| {
                 // FIXME: retrying?
                 warn!("Failed to send message to {}: {}", addr, e);
+                let emsg = format!("Failed to send message to {}: {}", addr, e);
+                cb_tx.unbounded_send(ControlBotCommand::ReportFailure(emsg))
+                    .unwrap();
             });
         self.handle.spawn(fut);
     }

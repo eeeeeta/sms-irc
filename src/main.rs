@@ -12,6 +12,10 @@ extern crate toml;
 #[macro_use] extern crate log;
 extern crate log4rs;
 extern crate tokio_timer;
+extern crate whatsappweb;
+extern crate serde_json;
+extern crate image;
+extern crate qrcode;
 
 mod config;
 mod store;
@@ -23,6 +27,7 @@ mod models;
 mod contact;
 mod contact_factory;
 mod control;
+mod whatsapp;
 
 use config::Config;
 use store::Store;
@@ -40,6 +45,7 @@ use log4rs::append::Append;
 use log4rs::append::console::ConsoleAppender;
 use log::Record;
 use std::fmt;
+use whatsapp::WhatsappManager;
 
 pub struct IrcLogWriter {
     sender: UnboundedSender<ControlBotCommand>
@@ -51,8 +57,17 @@ impl fmt::Debug for IrcLogWriter {
 }
 impl Append for IrcLogWriter {
     fn append(&self, rec: &Record) -> Result<(), Box<::std::error::Error + Sync + Send>> {
+        use log::Level::*;
+
+        let colour = match rec.level() {
+            Error => "04",
+            Warn => "07",
+            Info => "09",
+            Debug => "10",
+            Trace => "11"
+        };
         self.sender.unbounded_send(
-            ControlBotCommand::Log(format!("{}:{} -- {}", rec.target(), rec.level(), rec.args())))
+            ControlBotCommand::Log(format!("[\x0302{}\x0f] \x02\x03{}{}\x0f -- {}", rec.target(), colour, rec.level(), rec.args())))
             .unwrap();
         Ok(())
     }
@@ -111,6 +126,19 @@ fn main() -> Result<(), failure::Error> {
 
         error!("ControlBot failed: {}", e);
         panic!("controlbot failed");
+    }));
+    info!("Initializing WhatsApp");
+    let wa = WhatsappManager::new(InitParameters {
+        cfg: &config,
+        store: store.clone(),
+        cm: &mut cm,
+        hdl: &hdl
+    });
+    hdl.spawn(wa.map_err(|e| {
+        // FIXME: restartability
+
+        error!("WhatsappManager failed: {}", e);
+        panic!("whatsapp failed");
     }));
     info!("Initializing contact factory");
     let cf = ContactFactory::new(config, store, cm, hdl);

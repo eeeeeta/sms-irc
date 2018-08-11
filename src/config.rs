@@ -19,5 +19,7 @@ pub struct Config {
     pub irc_port: Option<u16>,
     #[serde(default)]
     pub irc_password: Option<String>,
+    #[serde(default)]
+    pub qr_path: Option<String>
 }
 

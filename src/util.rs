@@ -1,9 +1,23 @@
 //! Helpful utility functions.
 use huawei_modem::pdu::{PduAddress, AddressType, HexData, PhoneNumber};
 use huawei_modem::convert::TryFrom;
+use whatsappweb::Jid;
 
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
+pub fn jid_to_address(jid: &Jid) -> Option<PduAddress> {
+    if let Some(pn) = jid.phonenumber() {
+        let toa = AddressType::default();
+        let num = PhoneNumber::from(pn.as_bytes());
+        Some(PduAddress {
+            type_addr: toa,
+            number: num
+        })
+    }
+    else {
+        None
+    }
+}
 pub fn normalize_address(addr: &PduAddress) -> String {
     let ton: u8 = addr.type_addr.into();
     let mut ret = format!("{:02X}", ton);
@@ -23,9 +37,9 @@ pub fn un_normalize_address(addr: &str) -> Option<PduAddress> {
         number: num
     })
 }
-pub fn make_nick_for_address(addr: &PduAddress) -> String {
+pub fn string_to_irc_nick(inp: &str) -> String {
     let mut ret = "S".to_string();
-    for ch in addr.to_string().chars() {
+    for ch in inp.chars() {
         match ch {
             '+' => ret.push('I'),
             '_' => ret.push('_'),
@@ -48,4 +62,8 @@ pub fn make_nick_for_address(addr: &PduAddress) -> String {
         }
     }
     ret
+}
+pub fn make_nick_for_address(addr: &PduAddress) -> String {
+    let inp = addr.to_string();
+    string_to_irc_nick(&inp)
 }

@@ -2,7 +2,7 @@
 
 use irc::client::PackedIrcClient;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
-use comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, InitParameters};
+use comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, WhatsappCommand, InitParameters};
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use store::Store;
 use failure::Error;
@@ -18,6 +18,7 @@ use models::Message as OurMessage;
 use models::Recipient;
 use irc::client::data::config::Config as IrcConfig;
 use util::{self, Result};
+use std::borrow::Cow;
 
 /// The maximum message size sent over IRC.
 static MESSAGE_MAX_LEN: usize = 350;
@@ -29,9 +30,13 @@ pub struct ContactManager {
     addr: PduAddress,
     store: Store,
     id: bool,
+    wa_mode: bool,
     admin_is_online: bool,
     connected: bool,
+    presence: Option<String>,
+    channels: Vec<String>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
+    wa_tx: UnboundedSender<WhatsappCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
     pub tx: UnboundedSender<ContactManagerCommand>,
     rx: UnboundedReceiver<ContactManagerCommand>
@@ -63,7 +68,27 @@ impl ContactManager {
         self.tx.unbounded_send(cmd)
             .unwrap()
     }
-    fn send_raw_message(&mut self, msg: &str) -> Result<()> {
+    fn process_groups(&mut self) -> Result<()> {
+        let mut chans = vec![];
+        for grp in self.store.get_groups_for_recipient(&self.addr)? {
+            self.irc.0.send_join(&grp.channel)?;
+            chans.push(grp.channel);
+        }
+        for ch in ::std::mem::replace(&mut self.channels, chans) {
+            if !self.channels.contains(&ch) {
+                self.irc.0.send_part(&ch)?;
+            }
+        }
+        Ok(())
+    }
+    fn send_raw_message(&mut self, msg: &str, group_target: Option<i32>) -> Result<()> {
+        let dest: Cow<str> = if let Some(g) = group_target {
+            let grp = self.store.get_group_by_id(g)?;
+            Cow::Owned(grp.channel)
+        }
+        else {
+            Cow::Borrowed(&self.admin)
+        };
         // We need to split messages that are too long to send on IRC up
         // into fragments, as well as splitting them at newlines.
         //
@@ -87,9 +112,15 @@ impl ContactManager {
                 }
             });
             for chunk in iter {
-                self.irc.0.send_privmsg(&self.admin, chunk)?;
+                self.irc.0.send_privmsg(&dest, chunk)?;
             }
         }
+        Ok(())
+    }
+    fn process_msg_plain(&mut self, msg: OurMessage) -> Result<()> {
+        let text = msg.text.as_ref().expect("msg has neither text nor pdu");
+        self.send_raw_message(text, msg.group_target)?;
+        self.store.delete_message(msg.id)?;
         Ok(())
     }
     fn process_msg_pdu(&mut self, msg: OurMessage, pdu: DeliverPdu) -> Result<()> {
@@ -111,7 +142,7 @@ impl ContactManager {
                     let mut concatenated = String::new();
                     let mut pdus = vec![];
                     for msg in msgs.iter() {
-                        let dec = DeliverPdu::try_from(&msg.pdu)?
+                        let dec = DeliverPdu::try_from(msg.pdu.as_ref().expect("csms message has no pdu"))?
                             .get_message_data()
                             .decode_message()?;
                         pdus.push(dec);
@@ -120,13 +151,13 @@ impl ContactManager {
                     for pdu in pdus {
                         concatenated.push_str(&pdu.text);
                     }
-                    self.send_raw_message(&concatenated)?;
+                    self.send_raw_message(&concatenated, msg.group_target)?;
                     for msg in msgs.iter() {
                         self.store.delete_message(msg.id)?;
                     }
                 }
                 else {
-                    self.send_raw_message(&m.text)?;
+                    self.send_raw_message(&m.text, msg.group_target)?;
                     self.store.delete_message(msg.id)?;
                 }
             },
@@ -152,15 +183,34 @@ impl ContactManager {
         let msgs = self.store.get_messages_for_recipient(&self.addr)?;
         for msg in msgs {
             debug!("Processing message #{}", msg.id);
-            let pdu = DeliverPdu::try_from(&msg.pdu)?;
-            self.process_msg_pdu(msg, pdu)?;
+            if msg.pdu.is_some() {
+                let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
+                self.process_msg_pdu(msg, pdu)?;
+            }
+            else {
+                self.process_msg_plain(msg)?;
+            }
         }
+        Ok(())
+    }
+    fn update_away(&mut self) -> Result<()> {
+        if !self.connected {
+            debug!("Not updating presence yet; not connected");
+            return Ok(());
+        }
+        debug!("Setting away state to {:?}", self.presence);
+        self.irc.0.send(Command::AWAY(self.presence.clone()))?;
         Ok(())
     }
     fn handle_int_rx(&mut self, cmc: ContactManagerCommand) -> Result<()> {
         use self::ContactManagerCommand::*;
         match cmc {
             ProcessMessages => self.process_messages()?,
+            ProcessGroups => self.process_groups()?,
+            UpdateAway(msg) => {
+                self.presence = msg;
+                self.update_away()?;
+            }
         }
         Ok(())
     }
@@ -183,6 +233,11 @@ impl ContactManager {
                 }
                 self.change_nick(msg[1].into())?;
                 self.irc.0.send_notice(&self.admin, "Done.")?;
+            },
+            "!wa" => {
+                self.wa_mode = !self.wa_mode;
+                let state = if self.wa_mode { "ENABLED" } else { "DISABLED" };
+                self.irc.0.send_notice(&self.admin, &format!("WhatsApp mode: {}", state))?;
             },
             "!die" => {
                 self.cf_tx.unbounded_send(ContactFactoryCommand::DropContact(self.addr.clone()))
@@ -207,6 +262,7 @@ impl ContactManager {
                 self.connected = true;
                 self.process_messages()?;
                 self.initialize_watch()?;
+                self.update_away()?;
             },
             Command::NICK(nick) => {
                 if let Some(from) = im.prefix {
@@ -248,7 +304,12 @@ impl ContactManager {
                     }
                     if target == self.nick {
                         debug!("{} -> {}: {}", from[0], self.addr, mesg); 
-                        self.modem_tx.unbounded_send(ModemCommand::SendMessage(self.addr.clone(), mesg)).unwrap();
+                        if self.wa_mode {
+                            self.wa_tx.unbounded_send(WhatsappCommand::SendDirectMessage(self.addr.clone(), mesg)).unwrap();
+                        }
+                        else {
+                            self.modem_tx.unbounded_send(ModemCommand::SendMessage(self.addr.clone(), mesg)).unwrap();
+                        }
                     }
                 }
             },
@@ -303,6 +364,7 @@ impl ContactManager {
         let (tx, rx) = mpsc::unbounded();
         let modem_tx = p.cm.modem_tx.clone();
         let cf_tx = p.cm.cf_tx.clone();
+        let wa_tx = p.cm.wa_tx.clone();
         let admin = p.cfg.admin_nick.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(recip.nick),
@@ -333,14 +395,19 @@ impl ContactManager {
                         let nick = cli.0.current_nickname().into();
                         tx.unbounded_send(ContactManagerCommand::ProcessMessages)
                             .unwrap();
+                        tx.unbounded_send(ContactManagerCommand::ProcessGroups)
+                            .unwrap();
                         Ok(ContactManager {
                             irc: cli,
                             irc_stream,
                             id: false,
                             connected: false,
+                            wa_mode: false,
                             // Assume admin is online to start with
                             admin_is_online: true,
-                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx
+                            presence: None,
+                            channels: vec![],
+                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx, wa_tx
                         })
                     },
                     Err(e) => {

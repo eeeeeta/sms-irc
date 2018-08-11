@@ -18,6 +18,7 @@ pub struct ContactFactory {
     rx: UnboundedReceiver<ContactFactoryCommand>,
     contacts_starting: HashMap<PduAddress, Box<Future<Item = ContactManager, Error = Error>>>,
     contacts: HashMap<PduAddress, ContactManager>,
+    contacts_presence: HashMap<PduAddress, Option<String>>,
     failed_contacts: HashSet<PduAddress>,
     failure_int: Interval,
     messages_processed: HashSet<i32>,
@@ -37,15 +38,20 @@ impl Future for ContactFactory {
             let msg = res.expect("contactfactory rx died");
             match msg {
                 ProcessMessages => self.process_messages()?,
+                ProcessGroups => self.process_groups()?,
                 LoadRecipients => self.load_recipients()?,
                 MakeContact(addr) => self.make_contact(addr)?,
-                DropContact(addr) => self.drop_contact(addr)?
+                DropContact(addr) => self.drop_contact(addr)?,
+                UpdateAway(addr, away) => self.update_away(addr, away)
             }
         }
         let mut to_remove = vec![];
         for (addr, fut) in self.contacts_starting.iter_mut() {
             match fut.poll() {
                 Ok(Async::Ready(c)) => {
+                    if let Some(pre) = self.contacts_presence.get(&addr) {
+                        c.add_command(ContactManagerCommand::UpdateAway(pre.clone()));
+                    }
                     self.contacts.insert(addr.clone(), c);
                     to_remove.push(addr.clone())
                 },
@@ -91,6 +97,7 @@ impl ContactFactory {
         Self {
             rx, failure_int,
             contacts_starting: HashMap::new(),
+            contacts_presence: HashMap::new(),
             contacts: HashMap::new(),
             failed_contacts: HashSet::new(),
             messages_processed: HashSet::new(),
@@ -115,6 +122,10 @@ impl ContactFactory {
         let addr = util::un_normalize_address(&recip.phone_number)
             .ok_or(format_err!("invalid num {} in db", recip.phone_number))?;
         debug!("Setting up recipient for {} (nick {})", addr, recip.nick);
+        if self.contacts_starting.get(&addr).is_some() || self.contacts.get(&addr).is_some() {
+            debug!("Not doing anything; contact already exists");
+            return Ok(());
+        }
         let cfut = {
             let ip = self.get_init_parameters();
             ContactManager::new(recip, ip)
@@ -143,6 +154,19 @@ impl ContactFactory {
     fn load_recipients(&mut self) -> Result<()> {
         for recip in self.store.get_all_recipients()? {
             self.setup_recipient(recip)?;
+        }
+        Ok(())
+    }
+    fn update_away(&mut self, addr: PduAddress, away: Option<String>) {
+        if let Some(c) = self.contacts.get(&addr) {
+            c.add_command(ContactManagerCommand::UpdateAway(away.clone()));
+        }
+        self.contacts_presence.insert(addr, away);
+    }
+    fn process_groups(&mut self) -> Result<()> {
+        debug!("Processing group updates");
+        for (_, c) in self.contacts.iter_mut() {
+            c.add_command(ContactManagerCommand::ProcessGroups);
         }
         Ok(())
     }
