@@ -76,7 +76,8 @@ impl Future for WhatsappManager {
 impl WhatsappManager {
     pub fn new(p: InitParameters) -> Self {
         let store = p.store;
-        let (wa_tx, rx) = mpsc::unbounded();
+        let wa_tx = Arc::new(p.cm.wa_tx.clone());
+        let rx = p.cm.wa_rx.take().unwrap();
         let cf_tx = p.cm.cf_tx.clone();
         let cb_tx = p.cm.cb_tx.clone();
         let qr_path = p.cfg.qr_path.clone().unwrap_or("/tmp/wa_qr.png".into());
