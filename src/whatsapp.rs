@@ -56,6 +56,7 @@ pub struct WhatsappManager {
     contacts: HashMap<Jid, WaContact>,
     chats: HashMap<Jid, WaChat>,
     groups: HashMap<Jid, GroupMetadata>,
+    pending_associations: HashMap<Jid, String>,
     state: WaState,
     connected: bool,
     store: Store,
@@ -88,6 +89,7 @@ impl WhatsappManager {
             contacts: HashMap::new(),
             chats: HashMap::new(),
             groups: HashMap::new(),
+            pending_associations: HashMap::new(),
             state: WaState::Uninitialized,
             connected: false,
             wa_tx: Arc::new(wa_tx),
@@ -110,6 +112,7 @@ impl WhatsappManager {
             UserDataChanged(wau) => self.on_user_data_changed(wau),
             PersistentChanged(wap) => self.on_persistent_session_data_changed(wap)?,
             Disconnect(war) => self.on_disconnect(war),
+            GotGroupMetadata(meta) => self.on_got_group_metadata(meta)?,
             Message(new, msg) => {
                 if new {
                     self.on_message(msg)?;
@@ -246,18 +249,38 @@ impl WhatsappManager {
     }
     fn group_list(&mut self) -> Result<()> {
         let mut list = vec![];
-        for (jid, gmeta) in self.groups.iter() {
+        for (jid, gmeta) in self.chats.iter() {
             let bstatus = if let Some(grp) = self.store.get_group_by_jid_opt(jid)? {
-                format!("\x02\x0309bridged to #{}\x0f", grp.channel)
+                format!("\x02\x0309group bridged to #{}\x0f", grp.channel)
             }
             else {
-                format!("\x02\x0304unbridged\x0f")
+                if jid.is_group {
+                    format!("\x02\x0304unbridged group\x0f")
+                }
+                else {
+                    format!("\x021-to-1 chat\x0f")
+                }
             };
-            list.push(format!("{}\t\x02{}\x0f\t{}", jid.to_string(), gmeta.subject, bstatus));
+            list.push(format!("- '{}' (jid {}) - {}", gmeta.name.as_ref().map(|x| x as &str).unwrap_or("<unnamed>"), jid.to_string(), bstatus));
         }
-        self.cb_respond("JID\tSUBJECT\tBRIDGING STATUS".into());
+        if list.len() == 0 {
+            self.cb_respond("no WhatsApp chats (yet?)".into());
+        }
+        else {
+            self.cb_respond("WhatsApp chats:".into());
+        }
         for item in list {
             self.cb_respond(item);
+        }
+        Ok(())
+    }
+    fn on_got_group_metadata(&mut self, meta: GroupMetadata) -> Result<()> {
+        info!("Got metadata for group '{}' (jid {})", meta.subject, meta.id.to_string());
+        let id = meta.id.clone();
+        self.groups.insert(meta.id.clone(), meta);
+        if let Some(chan) = self.pending_associations.remove(&id) {
+            info!("Executing pending association with chan {}", chan);
+            self.group_associate(id, chan)?;
         }
         Ok(())
     }
@@ -270,8 +293,28 @@ impl WhatsappManager {
             self.cb_respond(format!("that channel is already used for a group (jid {})!", grp.jid));
             return Ok(());
         }
+        if self.conn.is_none() || !self.connected {
+            self.cb_respond("we aren't connected to WhatsApp!".into());
+            return Ok(());
+        }
+        if !jid.is_group {
+            self.cb_respond("that jid isn't a group!".into());
+            return Ok(());
+        }
         if self.groups.get(&jid).is_none() {
-            self.cb_respond(format!("you don't know anything about the jid {}!", jid.to_string()));
+            info!("Getting metadata for jid {}", jid.to_string());
+            self.pending_associations.insert(jid.clone(), chan);
+            let tx = self.wa_tx.clone();
+            self.conn.as_mut().unwrap()
+                .get_group_metadata(&jid, Box::new(move |m| {
+                    if let Some(m) = m {
+                        tx.unbounded_send(WhatsappCommand::GotGroupMetadata(m))
+                            .unwrap();
+                    }
+                    else {
+                        warn!("Got empty group metadata, for some reason");
+                    }
+                }));
             return Ok(());
         }
         info!("Creating new group for jid {}", jid.to_string());

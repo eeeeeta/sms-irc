@@ -5,6 +5,7 @@ use huawei_modem::cmd::sms::SmsMessage;
 use huawei_modem::errors::HuaweiError;
 use huawei_modem::pdu::PduAddress;
 use whatsappweb::Jid;
+use whatsappweb::GroupMetadata;
 use whatsappweb::connection::State as WaState;
 use whatsappweb::connection::UserData as WaUserData;
 use whatsappweb::connection::PersistentSession as WaPersistentSession;
@@ -33,6 +34,7 @@ pub enum WhatsappCommand {
     GroupAssociate(Jid, String),
     GroupList,
     GroupRemove(String),
+    GotGroupMetadata(GroupMetadata),
     StateChanged(WaState),
     UserDataChanged(WaUserData),
     PersistentChanged(WaPersistentSession),
