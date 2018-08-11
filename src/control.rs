@@ -204,6 +204,7 @@ impl ControlBot {
     pub fn new(p: InitParameters) -> impl Future<Item = Self, Error = Error> {
         let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
+        let cb_tx = p.cm.cb_tx.clone();
         let m_tx = p.cm.modem_tx.clone();
         let rx = p.cm.cb_rx.take().unwrap();
         let admin = p.cfg.admin_nick.clone();
@@ -230,6 +231,8 @@ impl ControlBot {
                 match res {
                     Ok(cli) => {
                         let irc_stream = cli.0.stream();
+                        cb_tx.unbounded_send(ControlBotCommand::ProcessGroups)
+                            .unwrap();
                         Ok(ControlBot {
                             irc: cli,
                             irc_stream,
