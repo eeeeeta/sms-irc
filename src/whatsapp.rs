@@ -337,6 +337,9 @@ impl WhatsappManager {
                             if let Some(ref name) = ct.name {
                                 nick = util::string_to_irc_nick(name);
                             }
+                            else if let Some(ref name) = ct.notify {
+                                nick = util::string_to_irc_nick(name);
+                            }
                         }
                         info!("Creating new (WA) recipient for {} (nick {})", addr, nick);
                         self.store.store_recipient(&addr, &nick)?
