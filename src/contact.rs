@@ -69,13 +69,16 @@ impl ContactManager {
             .unwrap()
     }
     fn process_groups(&mut self) -> Result<()> {
+        debug!("Processing group changes");
         let mut chans = vec![];
         for grp in self.store.get_groups_for_recipient(&self.addr)? {
+            debug!("Joining {}", grp.channel);
             self.irc.0.send_join(&grp.channel)?;
             chans.push(grp.channel);
         }
         for ch in ::std::mem::replace(&mut self.channels, chans) {
             if !self.channels.contains(&ch) {
+                debug!("Parting {}", ch);
                 self.irc.0.send_part(&ch)?;
             }
         }
