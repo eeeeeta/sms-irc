@@ -53,7 +53,7 @@ impl Future for ControlBot {
     fn poll(&mut self) -> Poll<(), Error> {
         if !self.id {
             if let Some(ref pw) = self.webirc_password {
-                self.irc.0.send(Command::Raw("WEBIRC".into(), vec![pw.to_string(), "sms-irc.theta.eu.org".into(), "127.0.0.1".into()], None))?;
+                self.irc.0.send(Command::Raw("WEBIRC".into(), vec!["sms-irc".into(), pw.to_string(), "sms-irc.theta.eu.org".into(), "127.0.0.1".into()], None))?;
             }
             self.irc.0.identify()?;
             self.id = true;

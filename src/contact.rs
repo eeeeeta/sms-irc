@@ -50,7 +50,7 @@ impl Future for ContactManager {
         if !self.id {
             if let Some(ref pw) = self.webirc_password {
                 let vhost = format!("{}.sms-irc.theta.eu.org", util::string_to_irc_nick(&self.addr.to_string())); 
-                self.irc.0.send(Command::Raw("WEBIRC".into(), vec![pw.to_string(), vhost, "127.0.0.1".into()], None))?;
+                self.irc.0.send(Command::Raw("WEBIRC".into(), vec!["sms-irc".into(), pw.to_string(), vhost, "127.0.0.1".into()], None))?;
             }
             self.irc.0.identify()?;
             self.id = true;
