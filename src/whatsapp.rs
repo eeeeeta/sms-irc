@@ -11,7 +11,7 @@ use whatsappweb::connection::PersistentSession as WaPersistentSession;
 use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
 use whatsappweb::message::ChatMessage as WaMessage;
 use huawei_modem::pdu::PduAddress;
-use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
+use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::HashMap;
 use store::Store;
 use std::sync::Arc;
