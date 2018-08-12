@@ -1930,7 +1930,7 @@ dependencies = [
 [[package]]
 name = "whatsappweb"
 version = "0.0.1"
-source = "git+https://github.com/eeeeeta/whatsappweb-rs#18bf51df2375cbcc8f61d92b5fdeba8d31d880ab"
+source = "git+https://github.com/eeeeeta/whatsappweb-rs#03ffacdc461df0b0d0321fe4210d6f9c92b14515"
 dependencies = [
  "base64 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
