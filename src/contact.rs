@@ -35,6 +35,7 @@ pub struct ContactManager {
     connected: bool,
     presence: Option<String>,
     channels: Vec<String>,
+    webirc_password: Option<String>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
@@ -47,6 +48,10 @@ impl Future for ContactManager {
 
     fn poll(&mut self) -> Poll<(), Error> {
         if !self.id {
+            if let Some(ref pw) = self.webirc_password {
+                let vhost = format!("{}.sms-irc.theta.eu.org", util::string_to_irc_nick(&self.addr.to_string())); 
+                self.irc.0.send(Command::Raw("WEBIRC".into(), vec![pw.to_string(), vhost, "127.0.0.1".into()], None))?;
+            }
             self.irc.0.identify()?;
             self.id = true;
         }
@@ -374,6 +379,7 @@ impl ContactManager {
         let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
         let admin = p.cfg.admin_nick.clone();
+        let webirc_password = p.cfg.webirc_password.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(recip.nick),
             alt_nicks: Some(vec!["smsirc_fallback".to_string()]),
@@ -411,7 +417,7 @@ impl ContactManager {
                             admin_is_online: true,
                             presence: None,
                             channels: vec![],
-                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx, wa_tx
+                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx, wa_tx, webirc_password
                         })
                     },
                     Err(e) => {

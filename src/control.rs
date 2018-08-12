@@ -40,6 +40,7 @@ pub struct ControlBot {
     store: Store,
     id: bool,
     connected: bool,
+    webirc_password: Option<String>,
     rx: UnboundedReceiver<ControlBotCommand>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
@@ -51,6 +52,9 @@ impl Future for ControlBot {
 
     fn poll(&mut self) -> Poll<(), Error> {
         if !self.id {
+            if let Some(ref pw) = self.webirc_password {
+                self.irc.0.send(Command::Raw("WEBIRC".into(), vec![pw.to_string(), "sms-irc.theta.eu.org".into(), "127.0.0.1".into()], None))?;
+            }
             self.irc.0.identify()?;
             self.id = true;
         }
@@ -230,6 +234,7 @@ impl ControlBot {
         let admin = p.cfg.admin_nick.clone();
         let chan = p.cfg.irc_channel.clone();
         let store = p.store.clone();
+        let webirc_password = p.cfg.webirc_password.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(p.cfg.control_bot_nick.clone().unwrap_or("smsirc".into())),
             realname: Some("smsirc control bot".into()),
@@ -258,7 +263,7 @@ impl ControlBot {
                             connected: false,
                             channels: vec![],
                             log_backlog: vec![],
-                            cf_tx, m_tx, rx, admin, chan, store, wa_tx
+                            cf_tx, m_tx, rx, admin, chan, store, wa_tx, webirc_password
                         })
                     },
                     Err(e) => {

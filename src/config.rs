@@ -20,6 +20,8 @@ pub struct Config {
     #[serde(default)]
     pub irc_password: Option<String>,
     #[serde(default)]
-    pub qr_path: Option<String>
+    pub qr_path: Option<String>,
+    #[serde(default)]
+    pub webirc_password: Option<String>
 }
 
