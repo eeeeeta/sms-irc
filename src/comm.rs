@@ -57,14 +57,12 @@ pub enum ContactManagerCommand {
 pub enum ControlBotCommand {
     Log(String),
     ReportFailure(String),
-    // FIXME: unify this and the *Results
     CommandResponse(String),
-    CsqResult(SignalQuality),
-    RegResult(RegistrationState),
     ProcessGroups
 }
-pub struct InitParameters<'a> {
+pub struct InitParameters<'a, T: 'a> {
     pub cfg: &'a Config,
+    pub cfg2: &'a T,
     pub store: Store,
     pub cm: &'a mut ChannelMaker,
     pub hdl: &'a Handle

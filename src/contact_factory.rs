@@ -13,6 +13,8 @@ use util::{self, Result};
 use models::Recipient;
 use tokio_timer::Interval;
 use failure::Error;
+use contact_common::ContactManagerManager;
+use config::IrcClientConfig;
 
 pub struct ContactFactory {
     rx: UnboundedReceiver<ContactFactoryCommand>,
@@ -87,13 +89,33 @@ impl Future for ContactFactory {
         Ok(Async::NotReady)
     }
 }
+impl ContactManagerManager for ContactFactory {
+    fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
+        let cfut = {
+            let ip = self.get_init_parameters();
+            ContactManager::new(recip, ip)
+        };
+        self.contacts_starting.insert(addr, Box::new(cfut));
+        Ok(())
+    }
+    fn remove_contact_for(&mut self, addr: &PduAddress) -> Result<()> {
+        self.contacts.remove(addr);
+        Ok(())
+    }
+    fn has_contact(&mut self, addr: &PduAddress) -> bool {
+        self.contacts_starting.get(addr).is_some() || self.contacts.get(addr).is_some()
+    }
+    fn store(&mut self) -> &mut Store {
+        &mut self.store
+    }
+}
 impl ContactFactory {
     pub fn new(cfg: Config, store: Store, mut cm: ChannelMaker, hdl: Handle) -> Self {
         use std::time::{Instant, Duration};
 
         let rx = cm.cf_rx.take().unwrap();
         cm.cf_tx.unbounded_send(ContactFactoryCommand::LoadRecipients).unwrap();
-        let failure_int = Interval::new(Instant::now(), Duration::from_millis(cfg.failure_interval.unwrap_or(30000)));
+        let failure_int = Interval::new(Instant::now(), Duration::from_millis(cfg.client.as_ref().unwrap().failure_interval.unwrap_or(30000)));
         Self {
             rx, failure_int,
             contacts_starting: HashMap::new(),
@@ -110,46 +132,14 @@ impl ContactFactory {
         }
         Ok(())
     }
-    fn get_init_parameters(&mut self) -> InitParameters {
+    fn get_init_parameters(&mut self) -> InitParameters<IrcClientConfig> {
         InitParameters {
             cfg: &self.cfg,
+            cfg2: self.cfg.client.as_ref().unwrap(),
             store: self.store.clone(),
             cm: &mut self.cm,
             hdl: &self.hdl
         }
-    }
-    fn setup_recipient(&mut self, recip: Recipient) -> Result<()> {
-        let addr = util::un_normalize_address(&recip.phone_number)
-            .ok_or(format_err!("invalid num {} in db", recip.phone_number))?;
-        debug!("Setting up recipient for {} (nick {})", addr, recip.nick);
-        if self.contacts_starting.get(&addr).is_some() || self.contacts.get(&addr).is_some() {
-            debug!("Not doing anything; contact already exists");
-            return Ok(());
-        }
-        let cfut = {
-            let ip = self.get_init_parameters();
-            ContactManager::new(recip, ip)
-        };
-        self.contacts_starting.insert(addr, Box::new(cfut));
-        Ok(())
-    }
-    fn drop_contact(&mut self, addr: PduAddress) -> Result<()> {
-        info!("Dropping contact {}", addr);
-        self.store.delete_recipient_with_addr(&addr)?;
-        self.contacts.remove(&addr);
-        Ok(())
-    }
-    fn make_contact(&mut self, addr: PduAddress) -> Result<()> {
-        if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
-            self.setup_recipient(recip)?;
-        }
-        else {
-            let nick = util::make_nick_for_address(&addr);
-            info!("Creating new recipient for {} (nick {})", addr, nick);
-            let recip = self.store.store_recipient(&addr, &nick)?;
-            self.setup_recipient(recip)?;
-        }
-        Ok(())
     }
     fn load_recipients(&mut self) -> Result<()> {
         for recip in self.store.get_all_recipients()? {

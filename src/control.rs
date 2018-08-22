@@ -15,21 +15,10 @@ use irc::client::data::config::Config as IrcConfig;
 use irc::proto::message::Message;
 use irc::client::ext::ClientExt;
 use util::Result;
+use config::IrcClientConfig;
 use store::Store;
+use control_common::ControlCommon;
 
-static HELPTEXT: &str = r#"sms-irc help:
-[in this admin room]
-- !csq: check modem signal quality
-- !reg: check modem registration status
-- !sms <num>: start a conversation with a given phone number
-[in a /NOTICE to one of the ghosts]
-- !nick <nick>: change nickname
-- !wasetup: set up WhatsApp Web integration
-- !walogon: logon to WhatsApp Web using stored credentials
-- !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
-- !walist: list available WA groups
-- !wadel <#channel>: unbridge IRC channel <#channel>
-"#;
 pub struct ControlBot {
     irc: PackedIrcClient,
     irc_stream: ClientStream,
@@ -71,6 +60,21 @@ impl Future for ControlBot {
 
     }
 }
+impl ControlCommon for ControlBot {
+    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> {
+        &mut self.wa_tx
+    }
+    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand> {
+        &mut self.cf_tx
+    }
+    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> {
+        &mut self.m_tx
+    }
+    fn send_cb_message(&mut self, msg: &str) -> Result<()> {
+        self.irc.0.send_privmsg(&self.chan, msg)?;
+        Ok(())
+    }
+}
 impl ControlBot {
     // FIXME: this is yet more horrible copypasta :<
     fn process_groups(&mut self) -> Result<()> {
@@ -82,72 +86,6 @@ impl ControlBot {
         for ch in ::std::mem::replace(&mut self.channels, chans) {
             if !self.channels.contains(&ch) {
                 self.irc.0.send_part(&ch)?;
-            }
-        }
-        Ok(())
-    }
-    fn process_admin_command(&mut self, mesg: String) -> Result<()> {
-        if mesg.len() < 1 || mesg.chars().nth(0) != Some('!') {
-            return Ok(());
-        }
-        let msg = mesg.split(" ").collect::<Vec<_>>();
-        match msg[0] {
-            "!wasetup" => {
-                self.wa_tx.unbounded_send(WhatsappCommand::StartRegistration)
-                    .unwrap();
-            },
-            "!walist" => {
-                self.wa_tx.unbounded_send(WhatsappCommand::GroupList)
-                    .unwrap();
-            },
-            "!walogon" => {
-                self.wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
-                    .unwrap();
-            },
-            "!wadel" => {
-                if msg.get(1).is_none() {
-                    self.irc.0.send_privmsg(&self.chan, "!wadel takes an argument.")?;
-                    return Ok(());
-                }
-                self.wa_tx.unbounded_send(WhatsappCommand::GroupRemove(msg[1].into()))
-                    .unwrap();
-            },
-            "!wabridge" => {
-                if msg.get(1).is_none() || msg.get(2).is_none() {
-                    self.irc.0.send_privmsg(&self.chan, "!wabridge takes two arguments.")?;
-                    return Ok(());
-                }
-                let jid = match msg[1].parse() {
-                    Ok(j) => j,
-                    Err(e) => {
-                        self.irc.0.send_privmsg(&self.chan, &format!("failed to parse jid: {}", e))?;
-                        return Ok(());
-                    }
-                };
-                self.wa_tx.unbounded_send(WhatsappCommand::GroupAssociate(jid, msg[2].into()))
-                    .unwrap();
-            },
-            "!csq" => {
-                self.m_tx.unbounded_send(ModemCommand::RequestCsq).unwrap();
-            },
-            "!reg" => {
-                self.m_tx.unbounded_send(ModemCommand::RequestReg).unwrap();
-            },
-            "!sms" => {
-                if msg.get(1).is_none() {
-                    self.irc.0.send_privmsg(&self.chan, "!sms takes an argument.")?;
-                    return Ok(());
-                }
-                let addr = msg[1].parse().unwrap();
-                self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr)).unwrap();
-            },
-            "!help" => {
-                for line in HELPTEXT.lines() {
-                    self.irc.0.send_privmsg(&self.chan, line)?;
-                }
-            },
-            unrec => {
-                self.irc.0.send_privmsg(&self.chan, &format!("Unknown command: {}", unrec))?;
             }
         }
         Ok(())
@@ -216,32 +154,26 @@ impl ControlBot {
             CommandResponse(resp) => {
                 self.irc.0.send_privmsg(&self.chan, &format!("{}: {}", self.admin, resp))?;
             },
-            CsqResult(sq) => {
-                self.irc.0.send_privmsg(&self.chan, &format!("RSSI: \x02{}\x0f | BER: \x02{}\x0f", sq.rssi, sq.ber))?;
-            },
-            RegResult(st) => {
-                self.irc.0.send_privmsg(&self.chan, &format!("Registration state: \x02{}\x0f", st))?;
-            },
             ProcessGroups => self.process_groups()?
         }
         Ok(())
     }
-    pub fn new(p: InitParameters) -> impl Future<Item = Self, Error = Error> {
+    pub fn new(p: InitParameters<IrcClientConfig>) -> impl Future<Item = Self, Error = Error> {
         let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
         let m_tx = p.cm.modem_tx.clone();
         let rx = p.cm.cb_rx.take().unwrap();
-        let admin = p.cfg.admin_nick.clone();
-        let chan = p.cfg.irc_channel.clone();
+        let admin = p.cfg2.admin_nick.clone();
+        let chan = p.cfg2.irc_channel.clone();
         let store = p.store.clone();
-        let webirc_password = p.cfg.webirc_password.clone();
+        let webirc_password = p.cfg2.webirc_password.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
-            nickname: Some(p.cfg.control_bot_nick.clone().unwrap_or("smsirc".into())),
+            nickname: Some(p.cfg2.control_bot_nick.clone().unwrap_or("smsirc".into())),
             realname: Some("smsirc control bot".into()),
-            server: Some(p.cfg.irc_hostname.clone()),
-            password: p.cfg.irc_password.clone(),
-            port: p.cfg.irc_port,
-            channels: Some(vec![p.cfg.irc_channel.clone()]),
+            server: Some(p.cfg2.irc_hostname.clone()),
+            password: p.cfg2.irc_password.clone(),
+            port: p.cfg2.irc_port,
+            channels: Some(vec![p.cfg2.irc_channel.clone()]),
             ..Default::default()
         }));
         // DODGY UNSAFE STUFF: see src/contact.rs

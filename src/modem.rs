@@ -59,7 +59,7 @@ impl Future for ModemManager {
     }
 }
 impl ModemManager {
-    pub fn new(p: InitParameters) -> impl Future<Item = Self, Error = Error> {
+    pub fn new<T>(p: InitParameters<T>) -> impl Future<Item = Self, Error = Error> {
         let mut modem = match HuaweiModem::new_from_path(&p.cfg.modem_path, p.hdl) {
             Ok(m) => m,
             Err(e) => return Either::B(futures::future::err(e.into()))
@@ -113,7 +113,10 @@ impl ModemManager {
         let fut = cmd::network::get_registration(&mut self.modem)
             .then(move |res| {
                 match res {
-                    Ok(res) => tx.unbounded_send(ControlBotCommand::RegResult(res)).unwrap(),
+                    Ok(res) => {
+                        let res = format!("Registration state: \x02{}\x0f", res);
+                        tx.unbounded_send(ControlBotCommand::CommandResponse(res)).unwrap();
+                    },
                     Err(e) => warn!("Error getting registration: {}", e)
                 }
                 Ok(())
@@ -125,7 +128,10 @@ impl ModemManager {
         let fut = cmd::network::get_signal_quality(&mut self.modem)
             .then(move |res| {
                 match res {
-                    Ok(res) => tx.unbounded_send(ControlBotCommand::CsqResult(res)).unwrap(),
+                    Ok(res) => {
+                        let res = format!("RSSI: \x02{}\x0f | BER: \x02{}\x0f", res.rssi, res.ber);
+                        tx.unbounded_send(ControlBotCommand::CommandResponse(res)).unwrap();
+                    }
                     Err(e) => warn!("Error getting signal quality: {}", e)
                 }
                 Ok(())

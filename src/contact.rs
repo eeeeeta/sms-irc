@@ -14,14 +14,12 @@ use irc::client::ext::ClientExt;
 use irc::proto::command::Command;
 use irc::proto::response::Response;
 use irc::proto::message::Message;
-use models::Message as OurMessage;
 use models::Recipient;
+use config::IrcClientConfig;
 use irc::client::data::config::Config as IrcConfig;
 use util::{self, Result};
-use std::borrow::Cow;
+use sender_common::Sender;
 
-/// The maximum message size sent over IRC.
-static MESSAGE_MAX_LEN: usize = 350;
 pub struct ContactManager {
     irc: PackedIrcClient,
     irc_stream: ClientStream,
@@ -68,6 +66,22 @@ impl Future for ContactManager {
         Ok(Async::NotReady)
     }
 }
+impl Sender for ContactManager {
+    fn report_error(&mut self, _: &str, err: String) -> Result<()> {
+        self.irc.0.send_notice(&self.admin, &err)?;
+        Ok(())
+    }
+    fn store(&mut self) -> &mut Store {
+        &mut self.store
+    }
+    fn private_target(&mut self) -> String {
+        self.admin.clone()
+    }
+    fn send_irc_message(&mut self, _: &str, to: &str, msg: &str) -> Result<()> {
+        self.irc.0.send_privmsg(to, msg)?;
+        Ok(())
+    }
+}
 impl ContactManager {
     pub fn add_command(&self, cmd: ContactManagerCommand) {
         self.tx.unbounded_send(cmd)
@@ -93,93 +107,7 @@ impl ContactManager {
         }
         Ok(())
     }
-    fn send_raw_message(&mut self, msg: &str, group_target: Option<i32>) -> Result<()> {
-        let dest: Cow<str> = if let Some(g) = group_target {
-            let grp = self.store.get_group_by_id(g)?;
-            Cow::Owned(grp.channel)
-        }
-        else {
-            Cow::Borrowed(&self.admin)
-        };
-        // We need to split messages that are too long to send on IRC up
-        // into fragments, as well as splitting them at newlines.
-        //
-        // Shoutout to sebk from #rust on moznet for providing
-        // this nifty implementation!
-        for line in msg.lines() {
-            let mut last = 0;
-            let mut iter = line.char_indices().filter_map(|(i, _)| {
-                if i >= last + MESSAGE_MAX_LEN {
-                    let part = &line[last..i];
-                    last = i;
-                    Some(part)
-                }
-                else if last + MESSAGE_MAX_LEN >= line.len() {
-                    let part = &line[last..];
-                    last = line.len();
-                    Some(part)
-                }
-                else {
-                    None
-                }
-            });
-            for chunk in iter {
-                self.irc.0.send_privmsg(&dest, chunk)?;
-            }
-        }
-        Ok(())
-    }
-    fn process_msg_plain(&mut self, msg: OurMessage) -> Result<()> {
-        let text = msg.text.as_ref().expect("msg has neither text nor pdu");
-        self.send_raw_message(text, msg.group_target)?;
-        self.store.delete_message(msg.id)?;
-        Ok(())
-    }
-    fn process_msg_pdu(&mut self, msg: OurMessage, pdu: DeliverPdu) -> Result<()> {
-        use huawei_modem::convert::TryFrom;
-
-        // sanity check
-        if pdu.originating_address != self.addr {
-            return Err(format_err!("PDU for {} sent to ContactManager for {}", pdu.originating_address, self.addr));
-        }
-        match pdu.get_message_data().decode_message() {
-            Ok(m) => {
-                if let Some(cd) = m.udh.and_then(|x| x.get_concatenated_sms_data()) {
-                    debug!("Message is concatenated: {:?}", cd);
-                    let msgs = self.store.get_all_concatenated(&msg.phone_number, cd.reference as _)?;
-                    if msgs.len() != (cd.parts as usize) {
-                        debug!("Not enough messages: have {}, need {}", msgs.len(), cd.parts);
-                        return Ok(());
-                    }
-                    let mut concatenated = String::new();
-                    let mut pdus = vec![];
-                    for msg in msgs.iter() {
-                        let dec = DeliverPdu::try_from(msg.pdu.as_ref().expect("csms message has no pdu"))?
-                            .get_message_data()
-                            .decode_message()?;
-                        pdus.push(dec);
-                    }
-                    pdus.sort_by_key(|p| p.udh.as_ref().unwrap().get_concatenated_sms_data().unwrap().sequence);
-                    for pdu in pdus {
-                        concatenated.push_str(&pdu.text);
-                    }
-                    self.send_raw_message(&concatenated, msg.group_target)?;
-                    for msg in msgs.iter() {
-                        self.store.delete_message(msg.id)?;
-                    }
-                }
-                else {
-                    self.send_raw_message(&m.text, msg.group_target)?;
-                    self.store.delete_message(msg.id)?;
-                }
-            },
-            Err(e) => {
-                warn!("Error decoding message from {}: {:?}", self.addr, e);
-                self.irc.0.send_notice(&self.admin, &format!("Indecipherable message: {}", e))?;
-            }
-        }
-        Ok(())
-    }
+    
     fn process_messages(&mut self) -> Result<()> {
         use huawei_modem::convert::TryFrom;
 
@@ -197,10 +125,10 @@ impl ContactManager {
             debug!("Processing message #{}", msg.id);
             if msg.pdu.is_some() {
                 let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
-                self.process_msg_pdu(msg, pdu)?;
+                self.process_msg_pdu("", msg, pdu)?;
             }
             else {
-                self.process_msg_plain(msg)?;
+                self.process_msg_plain("", msg)?;
             }
         }
         Ok(())
@@ -367,7 +295,7 @@ impl ContactManager {
         }
         Ok(())
     }
-    pub fn new(recip: Recipient, p: InitParameters) -> impl Future<Item = Self, Error = Error> {
+    pub fn new(recip: Recipient, p: InitParameters<IrcClientConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
         let addr = match util::un_normalize_address(&recip.phone_number)
             .ok_or(format_err!("invalid num {} in db", recip.phone_number)) {
@@ -378,16 +306,16 @@ impl ContactManager {
         let modem_tx = p.cm.modem_tx.clone();
         let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
-        let admin = p.cfg.admin_nick.clone();
-        let webirc_password = p.cfg.webirc_password.clone();
+        let admin = p.cfg2.admin_nick.clone();
+        let webirc_password = p.cfg2.webirc_password.clone();
         let cfg = Box::into_raw(Box::new(IrcConfig {
             nickname: Some(recip.nick),
             alt_nicks: Some(vec!["smsirc_fallback".to_string()]),
             realname: Some(addr.to_string()),
-            server: Some(p.cfg.irc_hostname.clone()),
-            password: p.cfg.irc_password.clone(),
-            port: p.cfg.irc_port,
-            channels: Some(vec![p.cfg.irc_channel.clone()]),
+            server: Some(p.cfg2.irc_hostname.clone()),
+            password: p.cfg2.irc_password.clone(),
+            port: p.cfg2.irc_port,
+            channels: Some(vec![p.cfg2.irc_channel.clone()]),
             ..Default::default()
         }));
         // DODGY UNSAFE STUFF: The way IrcClient::new_future works is stupid.

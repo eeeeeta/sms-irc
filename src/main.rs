@@ -16,6 +16,8 @@ extern crate whatsappweb;
 extern crate serde_json;
 extern crate image;
 extern crate qrcode;
+extern crate tokio_io;
+extern crate chrono;
 
 mod config;
 mod store;
@@ -26,8 +28,13 @@ mod schema;
 mod models;
 mod contact;
 mod contact_factory;
+mod contact_common;
 mod control;
+mod control_common;
+mod sender_common;
 mod whatsapp;
+mod insp_s2s;
+mod insp_user;
 
 use config::Config;
 use store::Store;
@@ -45,6 +52,7 @@ use log4rs::append::Append;
 use log4rs::append::console::ConsoleAppender;
 use log::Record;
 use std::fmt;
+use insp_s2s::InspLink;
 use whatsapp::WhatsappManager;
 
 pub struct IrcLogWriter {
@@ -95,7 +103,10 @@ fn main() -> Result<(), failure::Error> {
                 .build("sms_irc", cll))
         .build(Root::builder().appender("stdout").build(pll))?;
     log4rs::init_config(log_config)?;
-    info!("Logging initialized");
+    if config.client.is_none() == config.insp_s2s.is_none() {
+        error!("Config must contain either a [client] or an [insp_s2s] section (and not both)!");
+        panic!("invalid configuration");
+    }
     info!("Connecting to database");
     let store = Store::new(&config)?;
     info!("Initializing tokio");
@@ -104,6 +115,7 @@ fn main() -> Result<(), failure::Error> {
     info!("Initializing modem");
     let mm = core.run(ModemManager::new(InitParameters {
         cfg: &config,
+        cfg2: &(),
         store: store.clone(),
         cm: &mut cm,
         hdl: &hdl
@@ -114,37 +126,58 @@ fn main() -> Result<(), failure::Error> {
         error!("ModemManager failed: {}", e);
         panic!("modemmanager failed");
     }));
-    info!("Initializing control bot");
-    let cb = core.run(ControlBot::new(InitParameters {
-        cfg: &config,
-        store: store.clone(),
-        cm: &mut cm,
-        hdl: &hdl
-    }))?;
-    hdl.spawn(cb.map_err(|e| {
-        // FIXME: restartability
-
-        error!("ControlBot failed: {}", e);
-        panic!("controlbot failed");
-    }));
     info!("Initializing WhatsApp");
     let wa = WhatsappManager::new(InitParameters {
         cfg: &config,
+        cfg2: &(),
         store: store.clone(),
         cm: &mut cm,
         hdl: &hdl
     });
-    hdl.spawn(wa.map_err(|e| {
-        // FIXME: restartability
+    if config.client.is_some() {
+        info!("Running in traditional IRC client mode");
+        info!("Initializing control bot");
+        let cb = core.run(ControlBot::new(InitParameters {
+            cfg: &config,
+            cfg2: config.client.as_ref().unwrap(),
+            store: store.clone(),
+            cm: &mut cm,
+            hdl: &hdl
+        }))?;
+        hdl.spawn(cb.map_err(|e| {
+            // FIXME: restartability
 
-        error!("WhatsappManager failed: {}", e);
-        panic!("whatsapp failed");
-    }));
-    info!("Initializing contact factory");
-    let cf = ContactFactory::new(config, store, cm, hdl);
-    let _ = core.run(cf.map_err(|e| {
-        error!("ContactFactory failed: {}", e);
-        panic!("contactfactory failed");
-    }));
+            error!("ControlBot failed: {}", e);
+            panic!("controlbot failed");
+        }));
+        hdl.spawn(wa.map_err(|e| {
+            // FIXME: restartability
+
+            error!("WhatsappManager failed: {}", e);
+            panic!("whatsapp failed");
+        }));
+        info!("Initializing contact factory");
+        let cf = ContactFactory::new(config, store, cm, hdl);
+        let _ = core.run(cf.map_err(|e| {
+            error!("ContactFactory failed: {}", e);
+            panic!("contactfactory failed");
+        }));
+    }
+    else {
+        info!("Running in InspIRCd s2s mode");
+        let fut = core.run(InspLink::new(InitParameters {
+            cfg: &config,
+            cfg2: config.insp_s2s.as_ref().unwrap(),
+            store: store.clone(),
+            cm: &mut cm,
+            hdl: &hdl
+        }))?;
+        let _ = core.run(fut.map_err(|e| {
+            // FIXME: restartability
+
+            error!("InspLink failed: {}", e);
+            panic!("link failed");
+        }));
+    }
     Ok(())
 }

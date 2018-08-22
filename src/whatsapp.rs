@@ -75,7 +75,7 @@ impl Future for WhatsappManager {
     }
 }
 impl WhatsappManager {
-    pub fn new(p: InitParameters) -> Self {
+    pub fn new<T>(p: InitParameters<T>) -> Self {
         let store = p.store;
         let wa_tx = p.cm.wa_tx.clone();
         let rx = p.cm.wa_rx.take().unwrap();
