@@ -56,7 +56,8 @@ use insp_s2s::InspLink;
 use whatsapp::WhatsappManager;
 
 pub struct IrcLogWriter {
-    sender: UnboundedSender<ControlBotCommand>
+    sender: UnboundedSender<ControlBotCommand>,
+    level: log::LevelFilter
 }
 impl fmt::Debug for IrcLogWriter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -66,7 +67,9 @@ impl fmt::Debug for IrcLogWriter {
 impl Append for IrcLogWriter {
     fn append(&self, rec: &Record) -> Result<(), Box<::std::error::Error + Sync + Send>> {
         use log::Level::*;
-
+        if rec.level() > self.level {
+            return Ok(());
+        }
         let colour = match rec.level() {
             Error => "04",
             Warn => "07",
@@ -91,17 +94,15 @@ fn main() -> Result<(), failure::Error> {
     let config: Config = toml::from_str(&::std::fs::read_to_string(config_path)?)?;
     let stdout = ConsoleAppender::builder().build();
     let mut cm = ChannelMaker::new();
-    let ilw = IrcLogWriter { sender: cm.cb_tx.clone() };
     eprintln!("[+] initialising better logging system");
     let cll = config.chan_loglevel.as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
     let pll = config.stdout_loglevel.as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
+    let ilw = IrcLogWriter { sender: cm.cb_tx.clone(), level: cll };
     let log_config = LogConfig::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
         .appender(Appender::builder().build("irc_chan", Box::new(ilw)))
         .logger(Logger::builder()
                 .appender("irc_chan")
-                .build("sms_irc", cll))
-        .logger(Logger::builder()
                 .appender("stdout")
                 .build("sms_irc", pll))
         .build(Root::builder().appender("stdout").build(::log::LevelFilter::Warn))?;
