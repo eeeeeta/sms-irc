@@ -106,13 +106,14 @@ impl Store {
         };
         Ok(res)
     }
-    pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str) -> Result<Recipient> {
+    pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str, wa: bool) -> Result<Recipient> {
         use schema::recipients;
 
         let num = util::normalize_address(addr);
         let nr = NewRecipient {
             phone_number: &num,
-            nick
+            nick,
+            whatsapp: wa
         };
         let conn = self.inner.get()?;
 
@@ -129,6 +130,17 @@ impl Store {
         ::diesel::update(recipients)
             .filter(phone_number.eq(num))
             .set(nick.eq(n))
+            .execute(&*conn)?;
+        Ok(())
+    }
+    pub fn update_recipient_wa(&mut self, addr: &PduAddress, wa: bool) -> Result<()> {
+        use schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+        let num = util::normalize_address(addr);
+
+        ::diesel::update(recipients)
+            .filter(phone_number.eq(num))
+            .set(whatsapp.eq(wa))
             .execute(&*conn)?;
         Ok(())
     }

@@ -177,6 +177,7 @@ impl ContactManager {
             "!wa" => {
                 self.wa_mode = !self.wa_mode;
                 let state = if self.wa_mode { "ENABLED" } else { "DISABLED" };
+                self.store.update_recipient_wa(&self.addr, self.wa_mode)?;
                 self.irc.0.send_notice(&self.admin, &format!("WhatsApp mode: {}", state))?;
             },
             "!die" => {
@@ -297,6 +298,7 @@ impl ContactManager {
     }
     pub fn new(recip: Recipient, p: InitParameters<IrcClientConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
+        let wa_mode = recip.whatsapp;
         let addr = match util::un_normalize_address(&recip.phone_number)
             .ok_or(format_err!("invalid num {} in db", recip.phone_number)) {
             Ok(r) => r,
@@ -340,7 +342,7 @@ impl ContactManager {
                             irc_stream,
                             id: false,
                             connected: false,
-                            wa_mode: false,
+                            wa_mode,
                             // Assume admin is online to start with
                             admin_is_online: true,
                             presence: None,

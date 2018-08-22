@@ -25,6 +25,7 @@ table! {
         id -> Int4,
         phone_number -> Varchar,
         nick -> Varchar,
+        whatsapp -> Bool,
     }
 }
 

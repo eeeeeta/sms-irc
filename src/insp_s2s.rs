@@ -96,12 +96,13 @@ impl Future for InspLink {
 impl ContactManagerManager for InspLink {
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
         trace!("setting up contact for recip #{}: {}", recip.id, addr);
-        let user = InspUser::new_from_recipient(addr.clone(), recip.nick, &self.cfg.server_name);
+        let host = self.host_for_wa(recip.whatsapp);
+        let user = InspUser::new_from_recipient(addr.clone(), recip.nick, &host);
         let uuid = self.new_user(user)?;
         self.contacts.insert(addr.clone(), InspContact {
             uuid: uuid.clone(),
             channels: vec![],
-            wa_mode: false
+            wa_mode: recip.whatsapp
         });
         self.contacts_uuid_pdua.insert(uuid, addr.clone());
         if self.state == LinkState::Linked {
@@ -223,6 +224,14 @@ impl InspLink {
         let codec = IrcCodec::new("utf8")?;
         Ok((addr, codec))
     }
+    fn host_for_wa(&self, wa: bool) -> String {
+        if wa {
+            format!("wa.{}", self.cfg.server_name)
+        }
+        else {
+            format!("s.{}", self.cfg.server_name)
+        }
+    }
     pub fn new(p: InitParameters<InspConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
         let cfg = p.cfg2.clone();
@@ -288,11 +297,14 @@ impl InspLink {
                 self.store.update_recipient_nick(&addr, &msg[1])?;
             },
             "!wa" => {
-                let state = {
+                let (is_wa, state) = {
                     let mut ct = self.contacts.get_mut(&addr).unwrap();
                     ct.wa_mode = !ct.wa_mode;
-                    if ct.wa_mode { "ENABLED" } else { "DISABLED" }
+                    self.store.update_recipient_wa(&addr, ct.wa_mode)?;
+                    (ct.wa_mode, if ct.wa_mode { "ENABLED" } else { "DISABLED" })
                 };
+                let host = self.host_for_wa(is_wa);
+                self.outbox.push(Message::new(Some(&uid), "FHOST", vec![&host], None)?);
                 self.contact_message(&uid, "NOTICE", &auid, &format!("WhatsApp mode: {}", state))?;
             },
             "!die" => {

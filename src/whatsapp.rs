@@ -345,7 +345,7 @@ impl WhatsappManager {
                             }
                         }
                         info!("Creating new (WA) recipient for {} (nick {})", addr, nick);
-                        self.store.store_recipient(&addr, &nick)?
+                        self.store.store_recipient(&addr, &nick, true)?
                     };
                     self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr))
                         .unwrap();

@@ -28,7 +28,7 @@ pub trait ContactManagerManager {
         else {
             let nick = util::make_nick_for_address(&addr);
             info!("Creating new recipient for {} (nick {})", addr, nick);
-            let recip = self.store().store_recipient(&addr, &nick)?;
+            let recip = self.store().store_recipient(&addr, &nick, false)?;
             self.setup_recipient(recip)?;
         }
         Ok(())
