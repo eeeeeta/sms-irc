@@ -5,12 +5,12 @@ use comm::{WhatsappCommand, ContactFactoryCommand, ModemCommand};
 use util::Result;
 
 static HELPTEXT: &str = r#"sms-irc help:
+[in a /NOTICE to one of the ghosts]
+- !nick <nick>: change nickname
 [in this admin room]
 - !csq: check modem signal quality
 - !reg: check modem registration status
 - !sms <num>: start a conversation with a given phone number
-[in a /NOTICE to one of the ghosts]
-- !nick <nick>: change nickname
 - !wasetup: set up WhatsApp Web integration
 - !walogon: logon to WhatsApp Web using stored credentials
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
@@ -23,6 +23,17 @@ pub trait ControlCommon {
     fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand>;
     fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand>;
     fn send_cb_message(&mut self, msg: &str) -> Result<()>;
+    fn extension_helptext() -> &'static str {
+        ""
+    }
+    fn extension_command(&mut self, msg: Vec<&str>) -> Result<()> {
+        self.unrecognised_command(msg[0])?;
+        Ok(())
+    }
+    fn unrecognised_command(&mut self, unrec: &str) -> Result<()> {
+        self.send_cb_message(&format!("Unknown command: {}", unrec))?;
+        Ok(())
+    }
     fn process_admin_command(&mut self, mesg: String) -> Result<()> {
         if mesg.len() < 1 || mesg.chars().nth(0) != Some('!') {
             return Ok(());
@@ -83,9 +94,7 @@ pub trait ControlCommon {
                     self.send_cb_message(line)?;
                 }
             },
-            unrec => {
-                self.send_cb_message(&format!("Unknown command: {}", unrec))?;
-            }
+            _ => self.extension_command(msg)?
         }
         Ok(())
     }

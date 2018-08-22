@@ -137,6 +137,12 @@ fn main() -> Result<(), failure::Error> {
         cm: &mut cm,
         hdl: &hdl
     });
+    hdl.spawn(wa.map_err(|e| {
+        // FIXME: restartability
+
+        error!("WhatsappManager failed: {}", e);
+        panic!("whatsapp failed");
+    }));
     if config.client.is_some() {
         info!("Running in traditional IRC client mode");
         info!("Initializing control bot");
@@ -152,12 +158,6 @@ fn main() -> Result<(), failure::Error> {
 
             error!("ControlBot failed: {}", e);
             panic!("controlbot failed");
-        }));
-        hdl.spawn(wa.map_err(|e| {
-            // FIXME: restartability
-
-            error!("WhatsappManager failed: {}", e);
-            panic!("whatsapp failed");
         }));
         info!("Initializing contact factory");
         let cf = ContactFactory::new(config, store, cm, hdl);

@@ -66,7 +66,7 @@ impl Future for InspLink {
         }
         while let Async::Ready(msg) = self.conn.poll()? {
             let msg = msg.ok_or(format_err!("disconnected"))?;
-            debug!("<-- {:?}", msg);
+            trace!("<-- {}", msg);
             self.handle_remote_message(msg)?;
         }
         if self.state == LinkState::Linked {
@@ -80,7 +80,7 @@ impl Future for InspLink {
             }
         }
         for msg in ::std::mem::replace(&mut self.outbox, vec![]) {
-            debug!("--> {:?}", msg);
+            trace!("--> {:?}", msg);
             match self.conn.start_send(msg)? {
                 AsyncSink::Ready => {},
                 AsyncSink::NotReady(val) => {
@@ -94,8 +94,8 @@ impl Future for InspLink {
 }
 impl ContactManagerManager for InspLink {
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
-        debug!("setting up contact for recip #{}: {}", recip.id, addr);
-        let user = InspUser::new_from_recipient(addr.clone(), recip.nick);
+        trace!("setting up contact for recip #{}: {}", recip.id, addr);
+        let user = InspUser::new_from_recipient(addr.clone(), recip.nick, &self.cfg.server_name);
         let uuid = self.new_user(user)?;
         self.contacts.insert(addr.clone(), InspContact {
             uuid: uuid.clone(),
@@ -105,7 +105,7 @@ impl ContactManagerManager for InspLink {
         Ok(())
     }
     fn remove_contact_for(&mut self, addr: &PduAddress) -> Result<()> {
-        debug!("removing contact for {}", addr);
+        trace!("removing contact for {}", addr);
         if let Some(uu) = self.contacts.get(addr).map(|x| x.uuid.clone()) {
             self.outbox.push(Message::new(Some(&uu), "QUIT", vec![], Some("Contact removed"))?);
             self.remove_user(&uu, false)?;
@@ -318,7 +318,7 @@ impl InspLink {
                     self.process_admin_command(msg)?;
                 }
                 else if self.channels.contains(&target) {
-                    debug!("Sending WA group message");
+                    debug!("Sending WA group message for {}", target);
                     self.wa_tx.unbounded_send(WhatsappCommand::SendGroupMessage(target, msg))
                         .unwrap()
                 }
@@ -326,12 +326,12 @@ impl InspLink {
                     if let Some(addr) = self.contacts_uuid_pdua.get(&target) {
                         if let Some(ct) = self.contacts.get(&addr) {
                             if ct.wa_mode {
-                                debug!("Sending WA DM");
+                                debug!("Sending WA DM for {}", target);
                                 self.wa_tx.unbounded_send(WhatsappCommand::SendDirectMessage(addr.clone(), msg))
                                     .unwrap();
                             }
                             else {
-                                debug!("Sending modem DM");
+                                debug!("Sending modem DM for {}", target);
                                 self.m_tx.unbounded_send(ModemCommand::SendMessage(addr.clone(), msg))
                                     .unwrap();
                             }
@@ -602,7 +602,7 @@ impl InspLink {
         info!("Sending burst");
         let burst_ts = Utc::now().timestamp().to_string();
         self.send_sid_line("BURST", vec![&burst_ts], None)?;
-        let cb = InspUser::new_for_controlbot(self.cfg.control_nick.clone());
+        let cb = InspUser::new_for_controlbot(self.cfg.control_nick.clone(), &self.cfg.server_name);
         let uuid = self.control_uuid.clone();
         self.users.insert(uuid.clone(), cb);
         let line = self.make_uid_line(&uuid)?;

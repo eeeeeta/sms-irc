@@ -39,30 +39,30 @@ impl InspUser {
         };
         Ok((uuid, ret))
     }
-    pub fn new_for_controlbot(nick: String) -> Self {
+    pub fn new_for_controlbot(nick: String, hostname: &str) -> Self {
         use chrono::Utc;
 
         let ts = Utc::now().timestamp();
         Self {
             ts, nick,
-            hostname: "sms-irc".into(),
-            displayed_hostname: "sms-irc".into(),
-            ident: "control".into(),
+            hostname: hostname.into(),
+            displayed_hostname: hostname.into(),
+            ident: "~control".into(),
             ip: "0.0.0.0".into(),
             signon_time: ts,
             modes: "+i".into(),
             gecos: "sms-irc control bot".into()
         }
     }
-    pub fn new_from_recipient(a: PduAddress, nick: String) -> Self {
+    pub fn new_from_recipient(a: PduAddress, nick: String, hostname: &str) -> Self {
         use chrono::Utc;
 
         let ts = Utc::now().timestamp();
         let safe_addr = util::string_to_irc_nick(&a.to_string());
         Self {
             ts, nick,
-            hostname: "sms-irc".into(),
-            displayed_hostname: format!("sms-irc/{}", safe_addr),
+            hostname: hostname.into(),
+            displayed_hostname: hostname.into(),
             ident: safe_addr,
             ip: "0.0.0.0".into(),
             signon_time: ts,
