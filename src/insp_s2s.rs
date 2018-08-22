@@ -11,7 +11,7 @@ use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand};
 use store::Store;
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
 use failure::Error;
 use models::Recipient;
 use util::{self, Result};
@@ -52,7 +52,7 @@ pub struct InspLink {
     contacts_uuid_pdua: HashMap<String, PduAddress>,
     store: Store,
     outbox: Vec<Message>,
-    channels: Vec<String>,
+    channels: HashSet<String>,
     state: LinkState,
 }
 
@@ -200,7 +200,7 @@ impl InspLink {
                     contacts_uuid_pdua: HashMap::new(),
                     store,
                     outbox: vec![],
-                    channels: vec![],
+                    channels: HashSet::new(),
                     state: LinkState::TcpConnected
                 }
             })
@@ -445,7 +445,8 @@ impl InspLink {
         for grp in self.store.get_groups_for_recipient(a)? {
             debug!("{} joining {}", ct.uuid, grp.channel);
             self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&grp.channel], None)?);
-            chans.push(grp.channel);
+            chans.push(grp.channel.clone());
+            self.channels.insert(grp.channel);
         }
         if !chans.contains(&self.cfg.log_chan) {
             self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&self.cfg.log_chan], None)?);
@@ -461,6 +462,7 @@ impl InspLink {
         Ok(())
     }
     fn process_groups(&mut self) -> Result<()> {
+        self.channels = HashSet::new();
         for addr in self.contacts.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>() {
             self.process_groups_for_recipient(&addr)?;
         }
