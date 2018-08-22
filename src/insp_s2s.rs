@@ -66,7 +66,7 @@ impl Future for InspLink {
         }
         while let Async::Ready(msg) = self.conn.poll()? {
             let msg = msg.ok_or(format_err!("disconnected"))?;
-            debug!("<-- {}", msg);
+            debug!("<-- {:?}", msg);
             self.handle_remote_message(msg)?;
         }
         if self.state == LinkState::Linked {
@@ -80,7 +80,7 @@ impl Future for InspLink {
             }
         }
         for msg in ::std::mem::replace(&mut self.outbox, vec![]) {
-            debug!("--> {}", msg);
+            debug!("--> {:?}", msg);
             match self.conn.start_send(msg)? {
                 AsyncSink::Ready => {},
                 AsyncSink::NotReady(val) => {
