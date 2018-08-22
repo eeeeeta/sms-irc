@@ -103,6 +103,7 @@ fn main() -> Result<(), failure::Error> {
         .appender(Appender::builder().build("irc_chan", Box::new(ilw)))
         .logger(Logger::builder()
                 .appender("irc_chan")
+                .appender("stdout")
                 .additive(false)
                 .build("sms_irc", pll))
         .build(Root::builder().appender("stdout").build(pll))?;
