@@ -502,7 +502,7 @@ impl InspLink {
         if let Some(ref user) = self.users.get(uid) {
             let msg = Message::new(
                 Some(&self.cfg.sid), "UID",
-                vec![&user.ts.to_string(), &user.nick, &user.hostname, 
+                vec![uid, &user.ts.to_string(), &user.nick, &user.hostname, 
                      &user.displayed_hostname, &user.ident, &user.ip,
                      &user.signon_time.to_string(), &user.modes],
                 Some(&user.gecos)
