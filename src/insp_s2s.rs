@@ -450,6 +450,7 @@ impl InspLink {
                 part.push(ch);
             }
         }
+        debug!("process_groups chans {:?} join {:?} part {:?}", self.channels, join, part);
         let mut lines = vec![];
         for ch in join {
             lines.push(Message::new(Some(&self.control_uuid), "JOIN", vec![&ch], None)?);
@@ -458,9 +459,9 @@ impl InspLink {
             }
         }
         for ch in part {
-            lines.push(Message::new(Some(&self.control_uuid), "PART", vec![&ch], None)?);
+            lines.push(Message::new(Some(&self.control_uuid), "PART", vec![&ch], Some("Left group"))?);
             for (_, contact) in self.contacts.iter() {
-                lines.push(Message::new(Some(&contact.uuid), "PART", vec![&ch], None)?);
+                lines.push(Message::new(Some(&contact.uuid), "PART", vec![&ch], Some("Left group"))?);
             }
         }
         for line in lines {
