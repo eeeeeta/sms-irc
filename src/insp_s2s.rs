@@ -156,7 +156,7 @@ impl ControlCommon for InspLink {
                 }
                 let ret = format!("{:#?}", self.users.get(msg[1]));
                 for line in ret.lines() {
-                    self.send_cb_message(line);
+                    self.send_cb_message(line)?;
                 }
             },
             "!raw" => {
