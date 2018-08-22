@@ -25,6 +25,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1203";
 struct InspContact {
     uuid: String,
+    channels: Vec<String>,
     wa_mode: bool
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -99,10 +100,13 @@ impl ContactManagerManager for InspLink {
         let uuid = self.new_user(user)?;
         self.contacts.insert(addr.clone(), InspContact {
             uuid: uuid.clone(),
+            channels: vec![],
             wa_mode: false
         });
-        self.contacts_uuid_pdua.insert(uuid, addr);
-        self.process_groups()?;
+        self.contacts_uuid_pdua.insert(uuid, addr.clone());
+        if self.state == LinkState::Linked {
+            self.process_groups_for_recipient(&addr)?;
+        }
         Ok(())
     }
     fn remove_contact_for(&mut self, addr: &PduAddress) -> Result<()> {
@@ -290,7 +294,7 @@ impl InspLink {
                             if args[2] != "0" {
                                 Err(format_err!("Received 1-to-1 SERVER with hopcount != 0: {:?}", args))?
                             }
-                            info!("Received SERVER");
+                            info!("Verified server: {} ({})", args[0], suffix.unwrap());
                             self.do_burst()?;
                             self.state = LinkState::BurstSent;
                         },
@@ -398,10 +402,10 @@ impl InspLink {
                         }
                     },
                     "BURST" => {
-                        info!("Receiving burst");
+                        debug!("Receiving burst");
                     },
                     "ENDBURST" => {
-                        info!("Remote burst complete");
+                        info!("Received end of netburst");
                         self.state = LinkState::Linked;
                         self.on_linked()?;
                     },
@@ -431,41 +435,34 @@ impl InspLink {
         }
         None
     }
-    fn process_groups(&mut self) -> Result<()> {
-        let mut join = vec![];
-        let mut part = vec![];
+    fn process_groups_for_recipient(&mut self, a: &PduAddress) -> Result<()> {
+        // FIXME: It becomes delicious copypasta, they shall eat it.
+
+        debug!("Processing group changes for {}", a);
+        let ct = self.contacts.get_mut(a)
+            .expect("invalid addr in pgfr()");
         let mut chans = vec![];
-        for grp in self.store.get_all_groups()? {
-            if !self.channels.contains(&grp.channel) {
-                join.push(grp.channel.clone());
-            }
+        for grp in self.store.get_groups_for_recipient(a)? {
+            debug!("{} joining {}", ct.uuid, grp.channel);
+            self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&grp.channel], None)?);
             chans.push(grp.channel);
         }
-        if !self.channels.contains(&self.cfg.log_chan) {
+        if !ct.channels.contains(&self.cfg.log_chan) {
+            self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&self.cfg.log_chan], None)?);
             chans.push(self.cfg.log_chan.clone());
-            join.push(self.cfg.log_chan.clone());
         }
-        for ch in ::std::mem::replace(&mut self.channels, chans) {
-            if !self.channels.contains(&ch) {
-                part.push(ch);
+        for ch in ::std::mem::replace(&mut ct.channels, chans) {
+            if !ct.channels.contains(&ch) {
+                debug!("{} parting {}", ct.uuid, ch);
+                self.outbox.push(Message::new(Some(&self.control_uuid), "PART", vec![&ch], Some("Left group"))?);
             }
         }
-        debug!("process_groups chans {:?} join {:?} part {:?}", self.channels, join, part);
-        let mut lines = vec![];
-        for ch in join {
-            lines.push(Message::new(Some(&self.control_uuid), "JOIN", vec![&ch], None)?);
-            for (_, contact) in self.contacts.iter() {
-                lines.push(Message::new(Some(&contact.uuid), "JOIN", vec![&ch], None)?);
-            }
-        }
-        for ch in part {
-            lines.push(Message::new(Some(&self.control_uuid), "PART", vec![&ch], Some("Left group"))?);
-            for (_, contact) in self.contacts.iter() {
-                lines.push(Message::new(Some(&contact.uuid), "PART", vec![&ch], Some("Left group"))?);
-            }
-        }
-        for line in lines {
-            self.send(line);
+        debug!("{} channels now: {:?}", a, ct.channels);
+        Ok(())
+    }
+    fn process_groups(&mut self) -> Result<()> {
+        for addr in self.contacts.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>() {
+            self.process_groups_for_recipient(&addr)?;
         }
         Ok(())
     }
@@ -586,7 +583,7 @@ impl InspLink {
         Ok(())
     }
     fn do_capab_and_server(&mut self) -> Result<()> {
-        info!("Sending CAPAB and SERVER lines");
+        debug!("Sending CAPAB and SERVER lines");
         let capabs = vec![INSP_PROTOCOL_CAPAB, "NICKMAX=100", "CHANMAX=100", "MAXMODES=100", 
                           "IDENTMAX=100", "MAXQUIT=100", "MAXTOPIC=100", "MAXKICK=100",
                           "MAXGECOS=100", "MAXAWAY=100"];
