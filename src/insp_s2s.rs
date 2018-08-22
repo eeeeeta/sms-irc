@@ -77,14 +77,7 @@ impl Future for InspLink {
                 self.handle_cf_command(cfc)?;
             }
         }
-        for msg in ::std::mem::replace(&mut self.outbox, vec![]) {
-            match self.conn.start_send(msg)? {
-                AsyncSink::Ready => {},
-                AsyncSink::NotReady(val) => {
-                    self.outbox.push(val);
-                },
-            }
-        }
+        self.flush_outbox()?;
         Ok(Async::NotReady)
     }
 }
@@ -161,6 +154,20 @@ impl InspLink {
             .ok_or(format_err!("no addresses found"))?;
         let codec = IrcCodec::new("utf8")?;
         Ok((addr, codec))
+    }
+    fn flush_outbox(&mut self) -> Result<()> {
+        for msg in ::std::mem::replace(&mut self.outbox, vec![]) {
+            match self.conn.start_send(msg)? {
+                AsyncSink::Ready => {
+                    debug!("--> {}", msg);
+                },
+                AsyncSink::NotReady(val) => {
+                    self.outbox.push(val);
+                },
+            }
+        }
+        self.conn.poll_complete()?;
+        Ok(())
     }
     pub fn new(p: InitParameters<InspConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
