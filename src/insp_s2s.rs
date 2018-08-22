@@ -62,6 +62,7 @@ impl Future for InspLink {
     fn poll(&mut self) -> Poll<(), Error> {
         if self.state == LinkState::TcpConnected {
             self.do_capab_and_server()?;
+            self.state = LinkState::ServerSent;
         }
         while let Async::Ready(msg) = self.conn.poll()? {
             let msg = msg.ok_or(format_err!("disconnected"))?;
