@@ -176,7 +176,7 @@ impl InspLink {
             Ok(x) => x,
             Err(e) => return Either::B(futures::future::err(e))
         };
-        let control_uuid = format!("{}00000", cfg.sid);
+        let control_uuid = format!("{}A00000", cfg.sid);
         info!("Connecting to {}", addr);
         let fut = TcpStream::connect(&addr, p.hdl)
             .map(|res| {
