@@ -292,6 +292,7 @@ impl InspLink {
                         "CAPAB" => {
                             debug!("Received CAPAB: {:?} {:?}", args, suffix);
                         },
+                        " " | "" => {},
                         unk => {
                             warn!("Received unprefixed raw message: {} {:?} {:?}", unk, args, suffix);
                         },
@@ -389,6 +390,7 @@ impl InspLink {
                     "ENDBURST" => {
                         info!("Remote burst complete");
                         self.state = LinkState::Linked;
+                        self.on_linked()?;
                     },
                     other => {
                         debug!("Received unimplemented raw command {}: {:?} {:?}", other, args, suffix);
@@ -399,6 +401,13 @@ impl InspLink {
                 debug!("Received unimplemented command {:?}", other);
             }
         }
+        Ok(())
+    }
+    fn on_linked(&mut self) -> Result<()> {
+        info!("Link established!");
+        self.outbox.push(Message::new(Some(&self.control_uuid), "JOIN", vec![&self.cfg.log_chan], None)?);
+        self.process_groups()?;
+        self.process_messages()?;
         Ok(())
     }
     fn admin_uuid(&mut self) -> Option<String> {
@@ -418,6 +427,10 @@ impl InspLink {
                 join.push(grp.channel.clone());
             }
             chans.push(grp.channel);
+        }
+        if !self.channels.contains(&self.cfg.log_chan) {
+            chans.push(self.cfg.log_chan.clone());
+            join.push(self.cfg.log_chan.clone());
         }
         for ch in ::std::mem::replace(&mut self.channels, chans) {
             if !self.channels.contains(&ch) {
