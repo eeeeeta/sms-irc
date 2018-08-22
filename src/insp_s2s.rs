@@ -447,14 +447,14 @@ impl InspLink {
             self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&grp.channel], None)?);
             chans.push(grp.channel);
         }
-        if !ct.channels.contains(&self.cfg.log_chan) {
+        if !chans.contains(&self.cfg.log_chan) {
             self.outbox.push(Message::new(Some(&ct.uuid), "JOIN", vec![&self.cfg.log_chan], None)?);
             chans.push(self.cfg.log_chan.clone());
         }
         for ch in ::std::mem::replace(&mut ct.channels, chans) {
             if !ct.channels.contains(&ch) {
                 debug!("{} parting {}", ct.uuid, ch);
-                self.outbox.push(Message::new(Some(&self.control_uuid), "PART", vec![&ch], Some("Left group"))?);
+                self.outbox.push(Message::new(Some(&ct.uuid), "PART", vec![&ch], Some("Left group"))?);
             }
         }
         debug!("{} channels now: {:?}", a, ct.channels);

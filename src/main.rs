@@ -103,8 +103,9 @@ fn main() -> Result<(), failure::Error> {
         .appender(Appender::builder().build("irc_chan", Box::new(ilw)))
         .logger(Logger::builder()
                 .appender("irc_chan")
+                .additive(false)
                 .build("sms_irc", pll))
-        .build(Root::builder().appender("stdout").build(::log::LevelFilter::Warn))?;
+        .build(Root::builder().appender("stdout").build(pll))?;
     log4rs::init_config(log_config)?;
     if config.client.is_none() == config.insp_s2s.is_none() {
         error!("Config must contain either a [client] or an [insp_s2s] section (and not both)!");
