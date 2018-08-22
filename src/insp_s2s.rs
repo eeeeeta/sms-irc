@@ -310,18 +310,17 @@ impl InspLink {
         };
         match m.command {
             Command::PRIVMSG(target, msg) => {
-                debug!("Got PRIVMSG from {}: {}", target, msg);
                 if Some(prefix) != self.admin_uuid() {
                     debug!("Not admin ({:?}), returning", self.admin_uuid());
                     return Ok(());
                 }
-                if self.channels.contains(&target) {
+                if target == self.cfg.log_chan {
+                    self.process_admin_command(msg)?;
+                }
+                else if self.channels.contains(&target) {
                     debug!("Sending WA group message");
                     self.wa_tx.unbounded_send(WhatsappCommand::SendGroupMessage(target, msg))
                         .unwrap()
-                }
-                else if target == self.cfg.log_chan {
-                    self.process_admin_command(msg)?;
                 }
                 else {
                     if let Some(addr) = self.contacts_uuid_pdua.get(&target) {
@@ -341,7 +340,6 @@ impl InspLink {
                 }
             },
             Command::NOTICE(target, msg) => {
-                debug!("Got NOTICE from {}: {}", target, msg);
                 if Some(prefix) != self.admin_uuid() {
                     debug!("Not admin ({:?}), returning", self.admin_uuid());
                     return Ok(());
@@ -611,9 +609,8 @@ impl InspLink {
         self.send(line);
         for recip in self.store.get_all_recipients()? {
             let addr = util::un_normalize_address(&recip.phone_number)
-                .ok_or(format_err!("invalid phone number in db"))?;
-            let user = InspUser::new_from_recipient(addr, recip.nick);
-            self.new_user(user)?;
+               .ok_or(format_err!("invalid phone number in db"))?;
+            self.make_contact(addr)?;
         }
         self.send_sid_line("ENDBURST", vec![], None)?;
         Ok(())
