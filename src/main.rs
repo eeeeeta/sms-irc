@@ -103,7 +103,6 @@ fn main() -> Result<(), failure::Error> {
         .appender(Appender::builder().build("irc_chan", Box::new(ilw)))
         .logger(Logger::builder()
                 .appender("irc_chan")
-                .appender("stdout")
                 .build("sms_irc", pll))
         .build(Root::builder().appender("stdout").build(::log::LevelFilter::Warn))?;
     log4rs::init_config(log_config)?;
