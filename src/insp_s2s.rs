@@ -94,6 +94,7 @@ impl Future for InspLink {
 }
 impl ContactManagerManager for InspLink {
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
+        debug!("setting up contact for recip #{}: {}", recip.id, addr);
         let user = InspUser::new_from_recipient(addr.clone(), recip.nick);
         let uuid = self.new_user(user)?;
         self.contacts.insert(addr.clone(), InspContact {
@@ -104,6 +105,7 @@ impl ContactManagerManager for InspLink {
         Ok(())
     }
     fn remove_contact_for(&mut self, addr: &PduAddress) -> Result<()> {
+        debug!("removing contact for {}", addr);
         if let Some(uu) = self.contacts.get(addr).map(|x| x.uuid.clone()) {
             self.outbox.push(Message::new(Some(&uu), "QUIT", vec![], Some("Contact removed"))?);
             self.remove_user(&uu, false)?;
@@ -202,7 +204,7 @@ impl InspLink {
     }
     fn process_contact_admin_command(&mut self, addr: PduAddress, mesg: String) -> Result<()> {
         use chrono::Utc;
-
+        debug!("processing contact admin command for {}: {}", addr, mesg);
         // FIXME: this is a bit copypasta-y
         let uid = self.contacts.get(&addr)
             .map(|x| x.uuid.clone())
@@ -308,10 +310,13 @@ impl InspLink {
         };
         match m.command {
             Command::PRIVMSG(target, msg) => {
+                debug!("Got PRIVMSG from {}: {}", target, msg);
                 if Some(prefix) != self.admin_uuid() {
+                    debug!("Not admin ({:?}), returning", self.admin_uuid());
                     return Ok(());
                 }
                 if self.channels.contains(&target) {
+                    debug!("Sending WA group message");
                     self.wa_tx.unbounded_send(WhatsappCommand::SendGroupMessage(target, msg))
                         .unwrap()
                 }
@@ -322,10 +327,12 @@ impl InspLink {
                     if let Some(addr) = self.contacts_uuid_pdua.get(&target) {
                         if let Some(ct) = self.contacts.get(&addr) {
                             if ct.wa_mode {
+                                debug!("Sending WA DM");
                                 self.wa_tx.unbounded_send(WhatsappCommand::SendDirectMessage(addr.clone(), msg))
                                     .unwrap();
                             }
                             else {
+                                debug!("Sending modem DM");
                                 self.m_tx.unbounded_send(ModemCommand::SendMessage(addr.clone(), msg))
                                     .unwrap();
                             }
@@ -334,6 +341,11 @@ impl InspLink {
                 }
             },
             Command::NOTICE(target, msg) => {
+                debug!("Got NOTICE from {}: {}", target, msg);
+                if Some(prefix) != self.admin_uuid() {
+                    debug!("Not admin ({:?}), returning", self.admin_uuid());
+                    return Ok(());
+                }
                 if let Some(addr) = self.contacts_uuid_pdua.get(&target).map(|x| x.clone()) {
                     self.process_contact_admin_command(addr, msg)?;
                 }
