@@ -102,6 +102,7 @@ impl ContactManagerManager for InspLink {
             wa_mode: false
         });
         self.contacts_uuid_pdua.insert(uuid, addr);
+        self.process_groups()?;
         Ok(())
     }
     fn remove_contact_for(&mut self, addr: &PduAddress) -> Result<()> {
