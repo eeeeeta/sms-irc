@@ -140,6 +140,56 @@ impl ControlCommon for InspLink {
         self.outbox.push(Message::new(Some(&self.control_uuid), "PRIVMSG", vec![&self.cfg.log_chan], Some(msg))?);
         Ok(())
     }
+    fn extension_helptext() -> &'static str {
+        r#"[InspIRCd s2s-specific commands]
+- !raw <raw IRC line>: send a line over the wire
+- !uuid <uuid>: query information about a UUID
+- !uunick <nick>: get a UUID for a nick
+"#
+    }
+    fn extension_command(&mut self, msg: Vec<&str>) -> Result<()> {
+        match msg[0] {
+            "!uuid" => {
+                if msg.get(1).is_none() {
+                    self.send_cb_message("!uuid takes an argument.")?;
+                    return Ok(());
+                }
+                let ret = format!("{:#?}", self.users.get(msg[1]));
+                for line in ret.lines() {
+                    self.send_cb_message(line);
+                }
+            },
+            "!raw" => {
+                if msg.get(1).is_none() {
+                    self.send_cb_message("!raw takes some arguments.")?;
+                    return Ok(());
+                }
+                let m: Message = match msg[1..].join(" ").parse() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        self.send_cb_message(&format!("parse err: {}", e))?;
+                        return Ok(());
+                    }
+                };
+                self.outbox.push(m);
+            },
+            "!uunick" => {
+                if msg.get(1).is_none() {
+                    self.send_cb_message("!uunick takes an argument.")?;
+                    return Ok(());
+                }
+                let mut nick = None;
+                for (uuid, user) in self.users.iter() {
+                    if user.nick == msg[1] {
+                        nick = Some(uuid.clone());
+                    }
+                }
+                self.send_cb_message(&format!("result = {:?}", nick))?;
+            },
+            x => self.unrecognised_command(x)?
+        }
+        Ok(())
+    }
 }
 impl Sender for InspLink {
     fn report_error(&mut self, uid: &str, err: String) -> Result<()> {

@@ -93,6 +93,11 @@ pub trait ControlCommon {
                 for line in HELPTEXT.lines() {
                     self.send_cb_message(line)?;
                 }
+                if Self::extension_helptext() != "" {
+                    for line in Self::extension_helptext().lines() {
+                        self.send_cb_message(line)?;
+                    }
+                }
             },
             _ => self.extension_command(msg)?
         }
