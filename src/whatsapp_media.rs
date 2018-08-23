@@ -75,7 +75,7 @@ impl MediaInfo {
             MediaType::Image => format!("\x01ACTION uploaded an image ({}, {}) < {} >\x01", size, self.fi.mime, dl_path),
             MediaType::Audio => format!("\x01ACTION uploaded audio ({}, {}) < {} >\x01", size, self.fi.mime, dl_path),
             MediaType::Document => format!("\x01ACTION uploaded a document '{}' ({}, {}) < {} >\x01", self.name.take().unwrap_or("unknown".into()), self.fi.mime, size, dl_path),
-            MediaType::Video => format!("\x01ACTION uploaded video\x01")
+            MediaType::Video => format!("\x01ACTION uploaded video ({}, {}) < {} >\x01", size, self.fi.mime, dl_path)
         };
         Ok(ret)
     }

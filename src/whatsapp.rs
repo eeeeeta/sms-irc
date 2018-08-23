@@ -257,6 +257,7 @@ impl WhatsappManager {
                 ChatMessageContent::Text(s) => s,
                 ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
                 x @ ChatMessageContent::Image(..) |
+                x @ ChatMessageContent::Video(..) |
                 x @ ChatMessageContent::Audio(..) |
                 x @ ChatMessageContent::Document(..) => {
                     if let Some(addr) = util::jid_to_address(&from) {
@@ -287,6 +288,7 @@ impl WhatsappManager {
 
         let (ty, fi, name) = match ct {
             ChatMessageContent::Image(fi, ..) => (MediaType::Image, fi, None),
+            ChatMessageContent::Video(fi, ..) => (MediaType::Video, fi, None),
             ChatMessageContent::Audio(fi, ..) => (MediaType::Audio, fi, None),
             ChatMessageContent::Document(fi, name) => (MediaType::Document, fi, Some(name)),
             _ => unreachable!()
