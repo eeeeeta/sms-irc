@@ -518,7 +518,8 @@ impl WhatsappManager {
             GroupParticipantsChange { group, change, inducer, participants } => {
                 use whatsappweb::GroupParticipantsChange::*;
 
-                debug!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
+                warn!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
+                // FIXME: actually bridge these changes (!)
                 if let Some(group) = self.groups.get_mut(&group) {
                     match change {
                         Add => {
