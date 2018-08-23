@@ -21,6 +21,7 @@ extern crate chrono;
 extern crate humansize;
 extern crate uuid;
 extern crate reqwest;
+extern crate mime_guess;
 
 mod config;
 mod store;

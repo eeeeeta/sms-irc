@@ -15,6 +15,7 @@ use uuid::Uuid;
 use std::sync::Arc;
 use reqwest::header::UserAgent;
 use reqwest::StatusCode;
+use mime_guess::get_mime_extensions_str;
 
 pub struct MediaInfo {
     pub ty: MediaType,
@@ -34,8 +35,12 @@ pub struct MediaResult {
 impl MediaInfo {
     fn run(&mut self) -> Result<String> {
         let uu = Uuid::new_v4().simple().to_string();
-        let path = format!("{}/{}", self.path, uu);
-        let dl_path = format!("{}/{}", self.dl_path, uu);
+        let mime_ext = get_mime_extensions_str(&self.fi.mime)
+            .unwrap_or(&[])
+            .get(0)
+            .unwrap_or(&"bin");
+        let path = format!("{}/{}.{}", self.path, uu, mime_ext);
+        let dl_path = format!("{}/{}.{}", self.dl_path, uu, mime_ext);
         debug!("Creating file {}", path);
         let mut file = File::create(&path)?;
         debug!("Downloading {}", self.fi.url);
@@ -67,9 +72,9 @@ impl MediaInfo {
         let size = self.fi.size.file_size(file_size_opts::BINARY)
             .map_err(|e| format_err!("filesize error: {}", e))?;
         let ret = match self.ty {
-            MediaType::Image => format!("\x01ACTION uploaded an image ({}) < {} >\x01", size, dl_path),
-            MediaType::Audio => format!("\x01ACTION uploaded audio ({}) < {} >\x01", size, dl_path),
-            MediaType::Document => format!("\x01ACTION uploaded a document '{}' ({}) < {} >\x01", self.name.take().unwrap_or("unknown".into()), size, dl_path),
+            MediaType::Image => format!("\x01ACTION uploaded an image ({}, {}) < {} >\x01", size, self.fi.mime, dl_path),
+            MediaType::Audio => format!("\x01ACTION uploaded audio ({}, {}) < {} >\x01", size, self.fi.mime, dl_path),
+            MediaType::Document => format!("\x01ACTION uploaded a document '{}' ({}, {}) < {} >\x01", self.name.take().unwrap_or("unknown".into()), self.fi.mime, size, dl_path),
             MediaType::Video => format!("\x01ACTION uploaded video\x01")
         };
         Ok(ret)
