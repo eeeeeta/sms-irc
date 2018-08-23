@@ -133,6 +133,8 @@ impl WhatsappManager {
             Ok(r) => {
                 debug!("Media download/decryption job for {} complete.", r.addr);
                 self.store.store_plain_message(&r.addr, &r.text, r.group)?;
+                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
+                    .unwrap();
             },
             Err(e) => {
                 warn!("Decryption job failed: {}", e);

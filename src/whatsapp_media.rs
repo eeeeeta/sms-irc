@@ -13,6 +13,7 @@ use std::fs::File;
 use util::Result;
 use uuid::Uuid;
 use std::sync::Arc;
+use reqwest::header::UserAgent;
 
 pub struct MediaInfo {
     pub ty: MediaType,
@@ -38,7 +39,10 @@ impl MediaInfo {
         let mut file = File::create(&path)?;
         debug!("Downloading {}", self.fi.url);
         let mut data = vec![];
-        let mut resp = reqwest::get(&self.fi.url)?;
+        let client = reqwest::Client::new();
+        let mut resp = client.get(&self.fi.url)
+            .header(UserAgent::new("sms-irc"))
+            .send()?;
         resp.copy_to(&mut data)?;
         debug!("Checking encrypted SHA256");
         let sha = crypto::sha256(&data);
@@ -50,7 +54,7 @@ impl MediaInfo {
             .map_err(|e| format_err!("decryption error: {}", e))?;
         debug!("Checking SHA256");
         if sha != self.fi.sha256 {
-            //Err(format_err!("SHA256 mismatch"))?
+            Err(format_err!("SHA256 mismatch"))?
         }
         debug!("Writing to file");
         file.write_all(&dec)?;
