@@ -18,6 +18,9 @@ extern crate image;
 extern crate qrcode;
 extern crate tokio_io;
 extern crate chrono;
+extern crate humansize;
+extern crate uuid;
+extern crate reqwest;
 
 mod config;
 mod store;
@@ -33,6 +36,7 @@ mod control;
 mod control_common;
 mod sender_common;
 mod whatsapp;
+mod whatsapp_media;
 mod insp_s2s;
 mod insp_user;
 

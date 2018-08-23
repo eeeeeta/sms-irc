@@ -1,4 +1,4 @@
-//! Experimental support for WhatsApp.
+//! Experimental support fr WhatsApp.
 
 use whatsappweb::connection::{WhatsappWebConnection, WhatsappWebHandler};
 use whatsappweb::connection::State as WaState;
@@ -10,6 +10,7 @@ use whatsappweb::connection::UserData as WaUserData;
 use whatsappweb::connection::PersistentSession as WaPersistentSession;
 use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
 use whatsappweb::message::ChatMessage as WaMessage;
+use whatsappweb::message::ChatMessageContent;
 use huawei_modem::pdu::PduAddress;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::HashMap;
@@ -21,6 +22,7 @@ use image::Luma;
 use qrcode::QrCode;
 use futures::{Future, Async, Poll, Stream};
 use failure::Error;
+use whatsapp_media::{MediaInfo, MediaResult};
 
 struct WhatsappHandler {
     tx: Arc<UnboundedSender<WhatsappCommand>>
@@ -60,7 +62,9 @@ pub struct WhatsappManager {
     state: WaState,
     connected: bool,
     store: Store,
-    qr_path: String
+    qr_path: String,
+    media_path: String,
+    dl_path: String
 }
 impl Future for WhatsappManager {
     type Item = ();
@@ -82,6 +86,8 @@ impl WhatsappManager {
         let cf_tx = p.cm.cf_tx.clone();
         let cb_tx = p.cm.cb_tx.clone();
         let qr_path = p.cfg.qr_path.clone().unwrap_or("/tmp/wa_qr.png".into());
+        let media_path = p.cfg.media_path.clone().unwrap_or("/tmp/wa_media".into());
+        let dl_path = p.cfg.dl_path.clone().unwrap_or("file:///tmp/wa_media".into());
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
         Self {
@@ -93,7 +99,7 @@ impl WhatsappManager {
             state: WaState::Uninitialized,
             connected: false,
             wa_tx: Arc::new(wa_tx),
-            rx, cf_tx, cb_tx, qr_path, store
+            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -117,6 +123,19 @@ impl WhatsappManager {
                 if new {
                     self.on_message(msg)?;
                 }
+            },
+            MediaFinished(r) => self.media_finished(r)?
+        }
+        Ok(())
+    }
+    fn media_finished(&mut self, r: Result<MediaResult>) -> Result<()> {
+        match r {
+            Ok(r) => {
+                debug!("Media download/decryption job for {} complete.", r.addr);
+                self.store.store_plain_message(&r.addr, &r.text, r.group)?;
+            },
+            Err(e) => {
+                warn!("Decryption job failed: {}", e);
             }
         }
         Ok(())
@@ -164,8 +183,6 @@ impl WhatsappManager {
         Ok(())
     }
     fn send_direct_message(&mut self, addr: PduAddress, content: String) -> Result<()> {
-        use whatsappweb::message::ChatMessageContent;
-
         debug!("Sending direct message to {}...", addr);
         trace!("Message contents: {}", content);
         if self.conn.is_none() || !self.connected {
@@ -190,8 +207,6 @@ impl WhatsappManager {
         Ok(())
     }
     fn send_group_message(&mut self, chan: String, content: String) -> Result<()> {
-        use whatsappweb::message::ChatMessageContent;
-
         debug!("Sending message to group with chan {}...", chan);
         trace!("Message contents: {}", content);
         if self.conn.is_none() || !self.connected {
@@ -213,7 +228,7 @@ impl WhatsappManager {
         Ok(())
     }
     fn on_message(&mut self, msg: Box<WaMessage>) -> Result<()> {
-        use whatsappweb::message::{Direction, Peer, ChatMessageContent};
+        use whatsappweb::message::{Direction, Peer};
 
         trace!("processing WA message: {:?}", msg);
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
@@ -238,7 +253,18 @@ impl WhatsappManager {
             };
             let text = match content {
                 ChatMessageContent::Text(s) => s,
-                x => format!("[unimplemented message type: {:?}]", x)
+                ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
+                x @ ChatMessageContent::Image(..) |
+                x @ ChatMessageContent::Audio(..) |
+                x @ ChatMessageContent::Document(..) => {
+                    if let Some(addr) = util::jid_to_address(&from) {
+                        self.process_media(addr, group, x)?;
+                    }
+                    else {
+                        warn!("couldn't make address for jid {}", from.to_string());
+                    }
+                    return Ok(());
+                }
             };
             if let Some(addr) = util::jid_to_address(&from) {
                 self.store.store_plain_message(&addr, &text, group)?;
@@ -252,6 +278,25 @@ impl WhatsappManager {
                 conn.send_message_read(id, peer);
             }
         }
+        Ok(())
+    }
+    fn process_media(&mut self, addr: PduAddress, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
+        use whatsappweb::MediaType;
+
+        let (ty, fi, name) = match ct {
+            ChatMessageContent::Image(fi, ..) => (MediaType::Image, fi, None),
+            ChatMessageContent::Audio(fi, ..) => (MediaType::Audio, fi, None),
+            ChatMessageContent::Document(fi, name) => (MediaType::Document, fi, Some(name)),
+            _ => unreachable!()
+        };
+        let mi = MediaInfo {
+            ty, fi, name,
+            addr, group,
+            path: self.media_path.clone(),
+            dl_path: self.dl_path.clone(),
+            tx: self.wa_tx.clone()
+        };
+        mi.start();
         Ok(())
     }
     fn group_list(&mut self) -> Result<()> {

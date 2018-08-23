@@ -13,6 +13,7 @@ irc = "0.13"
 log = "0.4"
 log4rs = "0.8"
 qrcode = "0.7"
+reqwest = "0.8"
 r2d2 = "0.8"
 r2d2-diesel = "1.0"
 serde = "1.0"
@@ -22,6 +23,8 @@ tokio-core = "0.1"
 tokio-io = "0.1"
 tokio-timer = "0.2"
 toml = "0.4"
+humansize = "1.0"
+uuid = { version = "0.6", features = ["v4"] }
 
 [dependencies.diesel]
 features = ["postgres", "serde_json"]

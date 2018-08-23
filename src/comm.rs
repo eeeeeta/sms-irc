@@ -16,6 +16,8 @@ use config::Config;
 use store::Store;
 use tokio_core::reactor::Handle;
 use qrcode::QrCode;
+use whatsapp_media::MediaResult;
+use util::Result;
 
 pub enum ModemCommand {
     DoCmgl,
@@ -39,7 +41,8 @@ pub enum WhatsappCommand {
     UserDataChanged(WaUserData),
     PersistentChanged(WaPersistentSession),
     Disconnect(WaDisconnectReason),
-    Message(bool, Box<WaMessage>)
+    Message(bool, Box<WaMessage>),
+    MediaFinished(Result<MediaResult>)
 }
 pub enum ContactFactoryCommand {
     ProcessMessages,

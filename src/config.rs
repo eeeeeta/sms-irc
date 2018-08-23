@@ -11,6 +11,10 @@ pub struct Config {
     #[serde(default)]
     pub qr_path: Option<String>,
     #[serde(default)]
+    pub dl_path: Option<String>,
+    #[serde(default)]
+    pub media_path: Option<String>,
+    #[serde(default)]
     pub client: Option<IrcClientConfig>,
     #[serde(default)]
     pub insp_s2s: Option<InspConfig>
