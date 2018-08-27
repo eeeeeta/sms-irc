@@ -64,7 +64,8 @@ pub struct WhatsappManager {
     store: Store,
     qr_path: String,
     media_path: String,
-    dl_path: String
+    dl_path: String,
+    our_jid: Option<Jid>
 }
 impl Future for WhatsappManager {
     type Item = ();
@@ -98,6 +99,7 @@ impl WhatsappManager {
             pending_associations: HashMap::new(),
             state: WaState::Uninitialized,
             connected: false,
+            our_jid: None,
             wa_tx: Arc::new(wa_tx),
             rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path
         }
@@ -152,7 +154,7 @@ impl WhatsappManager {
             self.conn = Some(conn);
         }
         else {
-            info!("WhatsApp is not enabled.");
+            info!("WhatsApp is not configured.");
         }
         Ok(())
     }
@@ -235,28 +237,44 @@ impl WhatsappManager {
         trace!("processing WA message: {:?}", msg);
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
         let WaMessage { direction, content, id, .. } = msg;
-        if let Direction::Receiving(peer) = direction {
-            debug!("got message from peer {:?}", peer);
-            let (from, group) = match peer.clone() {
-                Peer::Individual(j) => (j, None),
-                Peer::Group { group, participant } => (participant, Some(group))
-            };
-            let group = match group {
-                Some(gid) => {
-                    if let Some(grp) = self.store.get_group_by_jid_opt(&gid)? {
-                        Some(grp.id)
-                    }
-                    else {
-                        info!("Received message for unbridged group {}, ignoring...", gid.to_string());
-                        return Ok(());
-                    }
-                },
-                None => None
-            };
-            let text = match content {
-                ChatMessageContent::Text(s) => s,
-                ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
-                x @ ChatMessageContent::Image(..) |
+        debug!("got message from dir {:?}", direction);
+        let mut peer = None;
+        let (from, group) = match direction {
+            Direction::Sending(jid) => {
+                let ojid = self.our_jid.clone()
+                    .ok_or(format_err!("our_jid empty"))?;
+                let group = if jid.is_group {
+                    Some(jid)
+                }
+                else {
+                    None
+                };
+                (ojid, group) 
+            },
+            Direction::Receiving(p) => {
+                peer = Some(p.clone());
+                match p {
+                    Peer::Individual(j) => (j, None),
+                    Peer::Group { group, participant } => (participant, Some(group))
+                }
+            }
+        };
+        let group = match group {
+            Some(gid) => {
+                if let Some(grp) = self.store.get_group_by_jid_opt(&gid)? {
+                    Some(grp.id)
+                }
+                else {
+                    info!("Received message for unbridged group {}, ignoring...", gid.to_string());
+                    return Ok(());
+                }
+            },
+            None => None
+        };
+        let text = match content {
+            ChatMessageContent::Text(s) => s,
+            ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
+            x @ ChatMessageContent::Image(..) |
                 x @ ChatMessageContent::Video(..) |
                 x @ ChatMessageContent::Audio(..) |
                 x @ ChatMessageContent::Document(..) => {
@@ -268,17 +286,18 @@ impl WhatsappManager {
                     }
                     return Ok(());
                 }
-            };
-            if let Some(addr) = util::jid_to_address(&from) {
-                self.store.store_plain_message(&addr, &text, group)?;
-                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
-                    .unwrap();
-            }
-            else {
-                warn!("couldn't make address for jid {}", from.to_string());
-            }
+        };
+        if let Some(addr) = util::jid_to_address(&from) {
+            self.store.store_plain_message(&addr, &text, group)?;
+            self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
+                .unwrap();
+        }
+        else {
+            warn!("couldn't make address for jid {}", from.to_string());
+        }
+        if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
-                conn.send_message_read(id, peer);
+                conn.send_message_read(id, p);
             }
         }
         Ok(())
@@ -484,6 +503,7 @@ impl WhatsappManager {
             },
             UserJid(jid) => {
                 info!("Our jid is: {}", jid.to_string());
+                self.our_jid = Some(jid);
             },
             PresenceChange(jid, ps, dt) => {
                 use whatsappweb::PresenceStatus::*;
