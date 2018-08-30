@@ -60,7 +60,8 @@ impl Future for ModemManager {
 }
 impl ModemManager {
     pub fn new<T>(p: InitParameters<T>) -> impl Future<Item = Self, Error = Error> {
-        let mut modem = match HuaweiModem::new_from_path(&p.cfg.modem_path, p.hdl) {
+        let path = p.cfg.modem_path.as_ref().unwrap();
+        let mut modem = match HuaweiModem::new_from_path(path, p.hdl) {
             Ok(m) => m,
             Err(e) => return Either::B(futures::future::err(e.into()))
         };

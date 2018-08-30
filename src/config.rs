@@ -1,7 +1,7 @@
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub database_url: String,
-    pub modem_path: String,
+    pub modem_path: Option<String>,
     #[serde(default)]
     pub cmgl_secs: Option<u32>,
     #[serde(default)]

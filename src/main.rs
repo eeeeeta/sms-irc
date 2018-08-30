@@ -122,20 +122,22 @@ fn main() -> Result<(), failure::Error> {
     info!("Initializing tokio");
     let mut core = Core::new()?;
     let hdl = core.handle();
-    info!("Initializing modem");
-    let mm = core.run(ModemManager::new(InitParameters {
-        cfg: &config,
-        cfg2: &(),
-        store: store.clone(),
-        cm: &mut cm,
-        hdl: &hdl
-    }))?;
-    hdl.spawn(mm.map_err(|e| {
-        // FIXME: restartability
+    if config.modem_path.is_some() {
+        info!("Initializing modem");
+        let mm = core.run(ModemManager::new(InitParameters {
+            cfg: &config,
+            cfg2: &(),
+            store: store.clone(),
+            cm: &mut cm,
+            hdl: &hdl
+        }))?;
+        hdl.spawn(mm.map_err(|e| {
+            // FIXME: restartability
 
-        error!("ModemManager failed: {}", e);
-        panic!("modemmanager failed");
-    }));
+            error!("ModemManager failed: {}", e);
+            panic!("modemmanager failed");
+        }));
+    }
     info!("Initializing WhatsApp");
     let wa = WhatsappManager::new(InitParameters {
         cfg: &config,
