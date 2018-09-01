@@ -10,7 +10,7 @@ use whatsappweb::connection::UserData as WaUserData;
 use whatsappweb::connection::PersistentSession as WaPersistentSession;
 use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
 use whatsappweb::message::ChatMessage as WaMessage;
-use whatsappweb::message::ChatMessageContent;
+use whatsappweb::message::{ChatMessageContent, MessageId, Peer};
 use huawei_modem::pdu::PduAddress;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::HashMap;
@@ -130,16 +130,25 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn media_finished(&mut self, r: Result<MediaResult>) -> Result<()> {
-        match r {
-            Ok(r) => {
-                debug!("Media download/decryption job for {} complete.", r.addr);
-                self.store.store_plain_message(&r.addr, &r.text, r.group)?;
+    fn media_finished(&mut self, r: MediaResult) -> Result<()> {
+        match r.result {
+            Ok(ret) => {
+                debug!("Media download/decryption job for {} / mid {:?} complete.", r.addr, r.mi);
+                self.store.store_plain_message(&r.addr, &ret, r.group)?;
                 self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                     .unwrap();
+                if let Some(ref mut conn) = self.conn {
+                    if let Some(p) = r.peer {
+                        conn.send_message_read(r.mi, p);
+                    }
+                }
             },
             Err(e) => {
-                warn!("Decryption job failed: {}", e);
+                warn!("Decryption job failed for {} / mid {:?}: {}", r.addr, r.mi, e);
+                let msg = "\x01ACTION uploaded media (couldn't download)\x01";
+                self.store.store_plain_message(&r.addr, &msg, r.group)?;
+                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
+                    .unwrap();
             }
         }
         Ok(())
@@ -271,20 +280,29 @@ impl WhatsappManager {
             },
             None => None
         };
+        let mut is_media = false;
         let text = match content {
             ChatMessageContent::Text(s) => s,
             ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
-            x @ ChatMessageContent::Image(..) |
-                x @ ChatMessageContent::Video(..) |
-                x @ ChatMessageContent::Audio(..) |
-                x @ ChatMessageContent::Document(..) => {
+            mut x @ ChatMessageContent::Image(..) |
+                mut x @ ChatMessageContent::Video(..) |
+                mut x @ ChatMessageContent::Audio(..) |
+                mut x @ ChatMessageContent::Document(..) => {
+                    let capt = x.take_caption();
                     if let Some(addr) = util::jid_to_address(&from) {
-                        self.process_media(addr, group, x)?;
+                        self.process_media(id.clone(), peer.clone(), addr, group, x)?;
+                        is_media = true;
                     }
                     else {
                         warn!("couldn't make address for jid {}", from.to_string());
+                        return Ok(());
                     }
-                    return Ok(());
+                    if let Some(c) = capt {
+                        c
+                    }
+                    else {
+                        return Ok(());
+                    }
                 }
         };
         if let Some(addr) = util::jid_to_address(&from) {
@@ -297,12 +315,14 @@ impl WhatsappManager {
         }
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
-                conn.send_message_read(id, p);
+                if !is_media {
+                    conn.send_message_read(id, p);
+                }
             }
         }
         Ok(())
     }
-    fn process_media(&mut self, addr: PduAddress, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
+    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, addr: PduAddress, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
         use whatsappweb::MediaType;
 
         let (ty, fi, name) = match ct {
@@ -313,7 +333,8 @@ impl WhatsappManager {
             _ => unreachable!()
         };
         let mi = MediaInfo {
-            ty, fi, name,
+            ty, fi, name, peer,
+            mi: id,
             addr, group,
             path: self.media_path.clone(),
             dl_path: self.dl_path.clone(),

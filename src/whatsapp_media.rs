@@ -1,6 +1,6 @@
 //! Decrypting/downloading WA media.
 
-use whatsappweb::message::FileInfo;
+use whatsappweb::message::{MessageId, Peer, FileInfo};
 use whatsappweb::{MediaType, crypto};
 use std::thread;
 use comm::WhatsappCommand;
@@ -20,6 +20,8 @@ use mime_guess::get_mime_extensions_str;
 pub struct MediaInfo {
     pub ty: MediaType,
     pub fi: FileInfo,
+    pub mi: MessageId,
+    pub peer: Option<Peer>,
     pub addr: PduAddress,
     pub group: Option<i32>,
     pub path: String,
@@ -30,7 +32,9 @@ pub struct MediaInfo {
 pub struct MediaResult {
     pub addr: PduAddress,
     pub group: Option<i32>,
-    pub text: String
+    pub mi: MessageId,
+    pub peer: Option<Peer>,
+    pub result: Result<String>
 }
 impl MediaInfo {
     fn run(&mut self) -> Result<String> {
@@ -80,18 +84,16 @@ impl MediaInfo {
         Ok(ret)
     }
     pub fn start(mut self) {
-        info!("Starting media download/decryption job for {}", self.addr);
+        info!("Starting media download/decryption job for {} / mid {:?}", self.addr, self.mi);
         thread::spawn(move || {
             let ret = self.run();
-            let addr = self.addr;
-            let group = self.group;
-            let ret = ret
-                .map(move |r| {
-                    MediaResult {
-                        addr, group,
-                        text: r
-                    }
-                });
+            let ret = MediaResult {
+                group: self.group,
+                mi: self.mi,
+                addr: self.addr,
+                peer: self.peer,
+                result: ret
+            };
             self.tx.unbounded_send(WhatsappCommand::MediaFinished(ret))
                 .unwrap();
         });

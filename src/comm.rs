@@ -42,7 +42,7 @@ pub enum WhatsappCommand {
     PersistentChanged(WaPersistentSession),
     Disconnect(WaDisconnectReason),
     Message(bool, Box<WaMessage>),
-    MediaFinished(Result<MediaResult>)
+    MediaFinished(MediaResult)
 }
 pub enum ContactFactoryCommand {
     ProcessMessages,
