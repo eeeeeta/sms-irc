@@ -447,6 +447,21 @@ impl InspLink {
                             self.process_messages()?;
                         }
                     },
+                    "SQUIT" => {
+                        if args.len() != 1 {
+                            warn!("Invalid SQUIT received: {:?}", args);
+                            return Ok(());
+                        }
+                        let mut split = 0;
+                        self.users.retain(|k, _| {
+                            let ret = k.starts_with(&args[0]);
+                            if ret {
+                                split += 1;
+                            }
+                            !ret
+                        });
+                        warn!("SQUIT of {} by {} ({} users split): {}", args[0], prefix, split, suffix.unwrap_or("<no reason>".into()));
+                    },
                     "NICK" => {
                         if args.len() != 2 {
                             warn!("Invalid NICK received: {:?}", args);
