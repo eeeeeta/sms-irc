@@ -440,7 +440,12 @@ impl InspLink {
                     "UID" => {
                         let (uuid, user) = InspUser::new_from_uid_line(args, suffix)?;
                         debug!("Received new user {}: {:?}", uuid, user);
+                        let is_admin = user.nick == self.cfg.admin_nick;
                         self.users.insert(uuid, user);
+                        if is_admin {
+                            info!("Admin has returned; processing messages");
+                            self.process_messages()?;
+                        }
                     },
                     "NICK" => {
                         if args.len() != 2 {
@@ -623,6 +628,10 @@ impl InspLink {
     fn process_messages(&mut self) -> Result<()> {
         use huawei_modem::convert::TryFrom;
 
+        if self.admin_uuid().is_none() {
+            warn!("Not processing messages; admin not connected");
+            return Ok(());
+        }
         for msg in self.store.get_all_messages()? {
             debug!("Processing message #{}", msg.id);
             let addr = util::un_normalize_address(&msg.phone_number)
