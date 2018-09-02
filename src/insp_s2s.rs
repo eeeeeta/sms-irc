@@ -435,6 +435,20 @@ impl InspLink {
                 // from. Don't ask why, just do." 
                 self.send_sid_line("PONG", vec![&dest, &source], None)?;
             },
+            Command::SQUIT(server, reason) => {
+                let mut split = 0;
+                self.users.retain(|k, _| {
+                    let ret = k.starts_with(&server);
+                    if ret {
+                        split += 1;
+                    }
+                    !ret
+                });
+                warn!("SQUIT of {} by {} ({} users split): {}", server, prefix, split, reason);
+                if self.admin_uuid().is_none() {
+                    warn!("(admin lost in SQUIT)");
+                }
+            },
             Command::Raw(cmd, args, suffix) => {
                 match &cmd as &str {
                     "UID" => {
@@ -446,21 +460,6 @@ impl InspLink {
                             info!("Admin has returned; processing messages");
                             self.process_messages()?;
                         }
-                    },
-                    "SQUIT" => {
-                        if args.len() != 1 {
-                            warn!("Invalid SQUIT received: {:?}", args);
-                            return Ok(());
-                        }
-                        let mut split = 0;
-                        self.users.retain(|k, _| {
-                            let ret = k.starts_with(&args[0]);
-                            if ret {
-                                split += 1;
-                            }
-                            !ret
-                        });
-                        warn!("SQUIT of {} by {} ({} users split): {}", args[0], prefix, split, suffix.unwrap_or("<no reason>".into()));
                     },
                     "NICK" => {
                         if args.len() != 2 {
