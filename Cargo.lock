@@ -1088,22 +1088,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "protoc"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "log 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "protoc-rust"
+name = "protobuf-codegen-pure"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "protobuf 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf-codegen 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "protoc 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1491,7 +1481,7 @@ dependencies = [
  "tokio-timer 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "whatsappweb 0.0.1 (git+https://github.com/eeeeeta/whatsappweb-rs)",
+ "whatsappweb 0.0.2 (git+https://github.com/eeeeeta/whatsappweb-rs)",
 ]
 
 [[package]]
@@ -1940,8 +1930,8 @@ dependencies = [
 
 [[package]]
 name = "whatsappweb"
-version = "0.0.1"
-source = "git+https://github.com/eeeeeta/whatsappweb-rs#d58945eb3e13704fee9b427f033610a0cae05a71"
+version = "0.0.2"
+source = "git+https://github.com/eeeeeta/whatsappweb-rs#b5c6f79e4538cfd91e03a275d6f01992fbfdc16b"
 dependencies = [
  "base64 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1952,9 +1942,8 @@ dependencies = [
  "json 0.11.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "protoc-rust 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "protobuf-codegen-pure 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "qrcode 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "reqwest 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.36 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.70 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2156,8 +2145,7 @@ dependencies = [
 "checksum proc-macro2 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)" = "cccdc7557a98fe98453030f077df7f3a042052fae465bb61d2c2c41435cfd9b6"
 "checksum protobuf 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "128a4f37a2df739a567a8685b17f54aa19b9c3c4a6a5b8731e97a419b3db451c"
 "checksum protobuf-codegen 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "3624c0feac7f512de21dbf8b574ae65c6573b1872d3878be951c0912eee4daca"
-"checksum protoc 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "8736a41d7c7e321913dd81067fbedf74d037f69999386eba07cc4dd1de7369f0"
-"checksum protoc-rust 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "25cba75872da640d0a9a78a9e0cf4b32c98b2f1b26c926aa384a2075ec522c37"
+"checksum protobuf-codegen-pure 2.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "30730428b671f84f5dd6fb7b71d6dfc1ae36ff3414b0495b2c0f65dde09a38ac"
 "checksum qrcode 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d5c30325393c280d05db5d2f996ac8f468789b6171de1165fab6de2a05fcb55c"
 "checksum quick-error 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9274b940887ce9addde99c4eee6b5c44cc494b182b97e73dc8ffdcb3397fd3f0"
 "checksum quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "7a6e920b65c65f10b2ae65c831a81a073a89edd28c7cce89475bff467ab4167a"
@@ -2251,7 +2239,7 @@ dependencies = [
 "checksum version_check 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "7716c242968ee87e5542f8021178248f267f295a5c4803beae8b8b7fd9bc6051"
 "checksum void 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 "checksum want 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "a05d9d966753fa4b5c8db73fcab5eed4549cfe0e1e4e66911e5564a0085c35d1"
-"checksum whatsappweb 0.0.1 (git+https://github.com/eeeeeta/whatsappweb-rs)" = "<none>"
+"checksum whatsappweb 0.0.2 (git+https://github.com/eeeeeta/whatsappweb-rs)" = "<none>"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 "checksum winapi 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "773ef9dcc5f24b7d850d0ff101e542ff24c3b090a9768e03ff889fdef41f00fd"
 "checksum winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2d315eee3b34aca4797b2da6b13ed88266e6d612562a0c46390af8299fc699bc"

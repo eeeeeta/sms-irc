@@ -204,7 +204,7 @@ impl WhatsappManager {
                 .unwrap();
             return Ok(());
         }
-        match Jid::from_phone_number(format!("{}", addr)) {
+        match Jid::from_phonenumber(format!("{}", addr)) {
             Ok(jid) => {
                 let content = ChatMessageContent::Text(content);
                 self.conn.as_mut().unwrap()
