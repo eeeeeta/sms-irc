@@ -283,7 +283,13 @@ impl WhatsappManager {
         let mut is_media = false;
         let text = match content {
             ChatMessageContent::Text(s) => s,
-            ChatMessageContent::Unimplemented(det) => format!("[\x02\x0304unimplemented\x0f] {}", det),
+            ChatMessageContent::Unimplemented(det) => {
+                if det.trim() == "" {
+                    debug!("Discarding empty unimplemented message.");
+                    return Ok(());
+                }
+                format!("[\x02\x0304unimplemented\x0f] {}", det)
+            },
             mut x @ ChatMessageContent::Image(..) |
                 mut x @ ChatMessageContent::Video(..) |
                 mut x @ ChatMessageContent::Audio(..) |
