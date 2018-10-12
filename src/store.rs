@@ -154,12 +154,13 @@ impl Store {
             .execute(&*conn)?;
         Ok(())
     }
-    pub fn get_recipient_by_id(&mut self, i: i32) -> Result<Recipient> {
+    pub fn get_recipient_by_id_opt(&mut self, i: i32) -> Result<Option<Recipient>> {
         use schema::recipients::dsl::*;
         let conn = self.inner.get()?;
 
         let res = recipients.filter(id.eq(i))
-            .first(&*conn)?;
+            .first(&*conn)
+            .optional()?;
         Ok(res)
     }
     pub fn get_recipient_by_addr_opt(&mut self, addr: &PduAddress) -> Result<Option<Recipient>> {

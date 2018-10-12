@@ -548,17 +548,18 @@ impl InspLink {
         }
         for grp in self.store.get_all_groups()? {
             for part in grp.participants {
-                let recip = self.store.get_recipient_by_id(part)?;
-                let num = util::un_normalize_address(&recip.phone_number)
-                    .ok_or(format_err!("invalid address {} in db", recip.phone_number))?;
-                if let Some(ct) = self.contacts.get(&num) {
-                    let mode = if grp.admins.contains(&part) {
-                        "+o"
+                if let Some(recip) = self.store.get_recipient_by_id_opt(part)? {
+                    let num = util::un_normalize_address(&recip.phone_number)
+                        .ok_or(format_err!("invalid address {} in db", recip.phone_number))?;
+                    if let Some(ct) = self.contacts.get(&num) {
+                        let mode = if grp.admins.contains(&part) {
+                            "+o"
+                        }
+                        else {
+                            "-o"
+                        };
+                        self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec!["#smsirc", mode, &ct.uuid], None)?);
                     }
-                    else {
-                        "-o"
-                    };
-                    self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec!["#smsirc", mode, &ct.uuid], None)?);
                 }
             }
         }
