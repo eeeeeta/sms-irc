@@ -15,6 +15,7 @@ static HELPTEXT: &str = r#"sms-irc help:
 - !walogon: logon to WhatsApp Web using stored credentials
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
 - !walist: list available WA groups
+- !waupdateall: refresh metadata for all WA groups (primarily for debugging)
 - !wadel <#channel>: unbridge IRC channel <#channel>
 "#;
 
@@ -50,6 +51,10 @@ pub trait ControlCommon {
             },
             "!walogon" => {
                 self.wa_tx().unbounded_send(WhatsappCommand::LogonIfSaved)
+                    .unwrap();
+            },
+            "!waupdateall" => {
+                self.wa_tx().unbounded_send(WhatsappCommand::GroupUpdateAll)
                     .unwrap();
             },
             "!wadel" => {

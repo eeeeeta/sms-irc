@@ -1,3 +1,5 @@
+#![allow(proc_macro_derive_resolution_fallback)]
+
 extern crate irc;
 extern crate futures;
 extern crate tokio_core;
@@ -16,7 +18,7 @@ extern crate whatsappweb;
 extern crate serde_json;
 extern crate image;
 extern crate qrcode;
-extern crate tokio_io;
+extern crate tokio_codec;
 extern crate chrono;
 extern crate humansize;
 extern crate uuid;

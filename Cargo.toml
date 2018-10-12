@@ -4,28 +4,27 @@ name = "sms-irc"
 version = "0.1.0"
 
 [dependencies]
+chrono = "0.4"
 derive_builder = "0.5"
 failure = "0.1"
 futures = "0.1"
-chrono = "0.4"
+humansize = "1.0"
 image = "0.19"
 irc = "0.13"
 log = "0.4"
 log4rs = "0.8"
+mime_guess = "2.0.0-alpha.6"
 qrcode = "0.7"
-reqwest = "0.8"
 r2d2 = "0.8"
 r2d2-diesel = "1.0"
+reqwest = "0.8"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
+tokio-codec = "0.1.1"
 tokio-core = "0.1"
-tokio-io = "0.1"
 tokio-timer = "0.2"
 toml = "0.4"
-humansize = "1.0"
-uuid = { version = "0.6", features = ["v4"] }
-mime_guess = "2.0.0-alpha.6"
 
 [dependencies.diesel]
 features = ["postgres", "serde_json"]
@@ -33,6 +32,10 @@ version = "1.0"
 
 [dependencies.huawei-modem]
 git = "https://github.com/eeeeeta/huawei-modem"
+
+[dependencies.uuid]
+features = ["v4"]
+version = "0.6"
 
 [dependencies.whatsappweb]
 git = "https://github.com/eeeeeta/whatsappweb-rs"

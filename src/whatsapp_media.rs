@@ -68,7 +68,9 @@ impl MediaInfo {
             .map_err(|e| format_err!("decryption error: {}", e))?;
         debug!("Checking SHA256");
         if sha != self.fi.sha256 {
-            //Err(format_err!("SHA256 mismatch"))?
+            // FIXME: for some reason, this SHA256 check always fails.
+            // The files look fine though...
+            // Err(format_err!("SHA256 mismatch"))?
         }
         debug!("Writing to file");
         file.write_all(&dec)?;
@@ -84,7 +86,7 @@ impl MediaInfo {
         Ok(ret)
     }
     pub fn start(mut self) {
-        info!("Starting media download/decryption job for {} / mid {:?}", self.addr, self.mi);
+        debug!("Starting media download/decryption job for {} / mid {:?}", self.addr, self.mi);
         thread::spawn(move || {
             let ret = self.run();
             let ret = MediaResult {

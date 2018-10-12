@@ -91,6 +91,16 @@ impl Store {
             .get_result(&*conn)?;
         Ok(res)
     }
+    pub fn update_group(&mut self, j: &Jid, parts: Vec<i32>, adms: Vec<i32>, tpc: &str) -> Result<Group> {
+        use schema::groups::dsl::*;
+        let j = j.to_string();
+        let conn = self.inner.get()?;
+
+        let res = ::diesel::update(groups.filter(jid.eq(&j)))
+            .set((participants.eq(parts), admins.eq(adms), topic.eq(tpc)))
+            .get_result(&*conn)?;
+        Ok(res)
+    }
     pub fn get_wa_persistence_opt(&mut self) -> Result<Option<PersistentSession>> {
         use schema::wa_persistence::dsl::*;
         let conn = self.inner.get()?;
@@ -143,6 +153,14 @@ impl Store {
             .set(whatsapp.eq(wa))
             .execute(&*conn)?;
         Ok(())
+    }
+    pub fn get_recipient_by_id(&mut self, i: i32) -> Result<Recipient> {
+        use schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+
+        let res = recipients.filter(id.eq(i))
+            .first(&*conn)?;
+        Ok(res)
     }
     pub fn get_recipient_by_addr_opt(&mut self, addr: &PduAddress) -> Result<Option<Recipient>> {
         use schema::recipients::dsl::*;

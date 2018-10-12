@@ -1,7 +1,6 @@
 //! InspIRCd server-to-server linking.
-use tokio_io::AsyncRead;
 use tokio_core::net::TcpStream;
-use tokio_io::codec::Framed;
+use tokio_codec::Framed;
 use irc::proto::IrcCodec;
 use irc::proto::message::Message;
 use irc::proto::command::Command;
@@ -249,7 +248,7 @@ impl InspLink {
         let fut = TcpStream::connect(&addr, p.hdl)
             .map(|res| {
                 Self {
-                    conn: res.framed(codec),
+                    conn: Framed::new(res, codec),
                     cfg,
                     control_uuid,
                     next_user_id: 1,
@@ -546,6 +545,22 @@ impl InspLink {
         self.channels = HashSet::new();
         for addr in self.contacts.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>() {
             self.process_groups_for_recipient(&addr)?;
+        }
+        for grp in self.store.get_all_groups()? {
+            for part in grp.participants {
+                let recip = self.store.get_recipient_by_id(part)?;
+                let num = util::un_normalize_address(&recip.phone_number)
+                    .ok_or(format_err!("invalid address {} in db", recip.phone_number))?;
+                if let Some(ct) = self.contacts.get(&num) {
+                    let mode = if grp.admins.contains(&part) {
+                        "+o"
+                    }
+                    else {
+                        "-o"
+                    };
+                    self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec!["#smsirc", mode, &ct.uuid], None)?);
+                }
+            }
         }
         Ok(())
     }

@@ -57,8 +57,6 @@ pub struct WhatsappManager {
     cb_tx: UnboundedSender<ControlBotCommand>,
     contacts: HashMap<Jid, WaContact>,
     chats: HashMap<Jid, WaChat>,
-    groups: HashMap<Jid, GroupMetadata>,
-    pending_associations: HashMap<Jid, String>,
     state: WaState,
     connected: bool,
     store: Store,
@@ -95,8 +93,6 @@ impl WhatsappManager {
             conn: None,
             contacts: HashMap::new(),
             chats: HashMap::new(),
-            groups: HashMap::new(),
-            pending_associations: HashMap::new(),
             state: WaState::Uninitialized,
             connected: false,
             our_jid: None,
@@ -115,9 +111,10 @@ impl WhatsappManager {
             SendDirectMessage(to, cont) => self.send_direct_message(to, cont)?,
             GroupAssociate(jid, to) => self.group_associate(jid, to)?,
             GroupList => self.group_list()?,
+            GroupUpdateAll => self.group_update_all()?,
             GroupRemove(grp) => self.group_remove(grp)?,
             StateChanged(was) => self.on_state_changed(was),
-            UserDataChanged(wau) => self.on_user_data_changed(wau),
+            UserDataChanged(wau) => self.on_user_data_changed(wau)?,
             PersistentChanged(wap) => self.on_persistent_session_data_changed(wap)?,
             Disconnect(war) => self.on_disconnect(war),
             GotGroupMetadata(meta) => self.on_got_group_metadata(meta)?,
@@ -248,15 +245,18 @@ impl WhatsappManager {
         let WaMessage { direction, content, id, .. } = msg;
         debug!("got message from dir {:?}", direction);
         let mut peer = None;
+        let mut is_ours = false;
         let (from, group) = match direction {
             Direction::Sending(jid) => {
                 let ojid = self.our_jid.clone()
                     .ok_or(format_err!("our_jid empty"))?;
+                is_ours = true;
                 let group = if jid.is_group {
                     Some(jid)
                 }
                 else {
-                    None
+                    info!("Received self-message in a 1-to-1 chat, ignoring...");
+                    return Ok(());
                 };
                 (ojid, group) 
             },
@@ -321,7 +321,7 @@ impl WhatsappManager {
         }
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
-                if !is_media {
+                if !is_media && !is_ours {
                     conn.send_message_read(id, p);
                 }
             }
@@ -376,14 +376,69 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn on_got_group_metadata(&mut self, meta: GroupMetadata) -> Result<()> {
-        info!("Got metadata for group '{}' (jid {})", meta.subject, meta.id.to_string());
-        let id = meta.id.clone();
-        self.groups.insert(meta.id.clone(), meta);
-        if let Some(chan) = self.pending_associations.remove(&id) {
-            info!("Executing pending association with chan {}", chan);
-            self.group_associate(id, chan)?;
+    fn on_got_group_metadata(&mut self, grp: GroupMetadata) -> Result<()> {
+        match self.store.get_group_by_jid_opt(&grp.id)? {
+            Some(g) => {
+                info!("Got metadata for group '{}' (jid {}, id {})", grp.subject, grp.id.to_string(), g.id);
+            },
+            None => {
+                warn!("Got metadata for unbridged group '{}' (jid {})", grp.subject, grp.id.to_string());
+            }
         }
+        let mut participants = vec![];
+        let mut admins = vec![];
+        for &(ref jid, admin) in grp.participants.iter() {
+            if let Some(addr) = util::jid_to_address(jid) {
+                let recip = if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
+                    recip
+                }
+                else {
+                    let mut nick = util::make_nick_for_address(&addr);
+                    if let Some(ct) = self.contacts.get(jid) {
+                        if let Some(ref name) = ct.name {
+                            nick = util::string_to_irc_nick(name);
+                        }
+                        else if let Some(ref name) = ct.notify {
+                            nick = util::string_to_irc_nick(name);
+                        }
+                    }
+                    info!("Creating new (WA) recipient for {} (nick {})", addr, nick);
+                    self.store.store_recipient(&addr, &nick, true)?
+                };
+                self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr))
+                    .unwrap();
+                participants.push(recip.id);
+                if admin {
+                    admins.push(recip.id);
+                }
+            }
+        }
+        self.store.update_group(&grp.id, participants, admins, &grp.subject)?;
+        self.on_groups_changed();
+        Ok(())
+    }
+    fn group_update_all(&mut self) -> Result<()> {
+        info!("Updating metadata for ALL groups");
+        for grp in self.store.get_all_groups()? {
+            if let Ok(j) = grp.jid.parse() {
+                self.request_update_group(j)?;
+            }
+        }
+        Ok(())
+    }
+    fn request_update_group(&mut self, jid: Jid) -> Result<()> {
+        info!("Getting metadata for jid {}", jid.to_string());
+        let tx = self.wa_tx.clone();
+        self.conn.as_mut().unwrap()
+            .get_group_metadata(&jid, Box::new(move |m| {
+                if let Some(m) = m {
+                    tx.unbounded_send(WhatsappCommand::GotGroupMetadata(m))
+                        .unwrap();
+                }
+                else {
+                    warn!("Got empty group metadata, for some reason");
+                }
+            }));
         Ok(())
     }
     fn group_associate(&mut self, jid: Jid, chan: String) -> Result<()> {
@@ -403,55 +458,9 @@ impl WhatsappManager {
             self.cb_respond("that jid isn't a group!".into());
             return Ok(());
         }
-        if self.groups.get(&jid).is_none() {
-            info!("Getting metadata for jid {}", jid.to_string());
-            self.pending_associations.insert(jid.clone(), chan);
-            let tx = self.wa_tx.clone();
-            self.conn.as_mut().unwrap()
-                .get_group_metadata(&jid, Box::new(move |m| {
-                    if let Some(m) = m {
-                        tx.unbounded_send(WhatsappCommand::GotGroupMetadata(m))
-                            .unwrap();
-                    }
-                    else {
-                        warn!("Got empty group metadata, for some reason");
-                    }
-                }));
-            return Ok(());
-        }
         info!("Creating new group for jid {}", jid.to_string());
-        let grp = {
-            let grp = self.groups.get(&jid).unwrap();
-            let mut participants = vec![];
-            let mut admins = vec![];
-            for &(ref jid, admin) in grp.participants.iter() {
-                if let Some(addr) = util::jid_to_address(jid) {
-                    let recip = if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
-                        recip
-                    }
-                    else {
-                        let mut nick = util::make_nick_for_address(&addr);
-                        if let Some(ct) = self.contacts.get(jid) {
-                            if let Some(ref name) = ct.name {
-                                nick = util::string_to_irc_nick(name);
-                            }
-                            else if let Some(ref name) = ct.notify {
-                                nick = util::string_to_irc_nick(name);
-                            }
-                        }
-                        info!("Creating new (WA) recipient for {} (nick {})", addr, nick);
-                        self.store.store_recipient(&addr, &nick, true)?
-                    };
-                    self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr))
-                        .unwrap();
-                    participants.push(recip.id);
-                    if admin {
-                        admins.push(recip.id);
-                    }
-                }
-            }
-            self.store.store_group(&jid, &chan, participants, admins, &grp.subject)?
-        };
+        let grp = self.store.store_group(&jid, &chan, vec![], vec![], "*** Group setup in progress, please wait... ***")?;
+        self.request_update_group(jid)?;
         self.on_groups_changed();
         self.cb_respond(format!("Group created (id {}).", grp.id));
         Ok(())
@@ -494,7 +503,7 @@ impl WhatsappManager {
         warn!("Disconnected from WhatsApp - reason: {:?}", reason);
         self.connected = false;
     }
-    fn on_user_data_changed(&mut self, ud: WaUserData) {
+    fn on_user_data_changed(&mut self, ud: WaUserData) -> Result<()> {
         trace!("user data changed: {:?}", ud);
         use self::WaUserData::*;
         match ud {
@@ -562,42 +571,17 @@ impl WhatsappManager {
                 if newly_created {
                     info!("Group {} was newly created.", meta.id.to_string());
                 }
-                self.groups.insert(meta.id.clone(), meta);
             },
             GroupParticipantsChange { group, change, inducer, participants } => {
-                use whatsappweb::GroupParticipantsChange::*;
-
-                warn!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
-                // FIXME: actually bridge these changes (!)
-                if let Some(group) = self.groups.get_mut(&group) {
-                    match change {
-                        Add => {
-                            for p in participants {
-                                group.participants.push((p, false));
-                            }
-                        },
-                        Remove => {
-                            group.participants.retain(|(p, _)| !participants.contains(&p));
-                        },
-                        x @ Promote | x @ Demote => {
-                            for &mut (ref p, ref mut admin) in group.participants.iter_mut() {
-                                if participants.contains(p) {
-                                    let change = if let Promote = x {
-                                        true
-                                    }
-                                    else {
-                                        false
-                                    };
-                                    *admin = change;
-                                }
-                            }
-                        },
-                    }
+                info!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
+                if self.store.get_group_by_jid_opt(&group)?.is_some() {
+                    self.request_update_group(group)?;
                 }
             },
             Battery(level) => {
                 debug!("Phone battery level: {}", level);
             }
         }
+        Ok(())
     }
 }

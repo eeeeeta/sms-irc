@@ -11,13 +11,11 @@ use whatsappweb::connection::UserData as WaUserData;
 use whatsappweb::connection::PersistentSession as WaPersistentSession;
 use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
 use whatsappweb::message::ChatMessage as WaMessage;
-use huawei_modem::cmd::network::{SignalQuality, RegistrationState};
 use config::Config;
 use store::Store;
 use tokio_core::reactor::Handle;
 use qrcode::QrCode;
 use whatsapp_media::MediaResult;
-use util::Result;
 
 pub enum ModemCommand {
     DoCmgl,
@@ -36,6 +34,7 @@ pub enum WhatsappCommand {
     GroupAssociate(Jid, String),
     GroupList,
     GroupRemove(String),
+    GroupUpdateAll,
     GotGroupMetadata(GroupMetadata),
     StateChanged(WaState),
     UserDataChanged(WaUserData),

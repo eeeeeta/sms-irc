@@ -3,7 +3,7 @@
 //! FIXME: the 'from_nick' parameter is a bit hacky.
 
 use models::Message;
-use huawei_modem::pdu::{PduAddress, DeliverPdu};
+use huawei_modem::pdu::DeliverPdu;
 use store::Store;
 use util::Result;
 
