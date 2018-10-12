@@ -558,7 +558,7 @@ impl InspLink {
                         else {
                             "-o"
                         };
-                        self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec!["#smsirc", mode, &ct.uuid], None)?);
+                        self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec![&grp.channel, mode, &ct.uuid], None)?);
                     }
                 }
             }
