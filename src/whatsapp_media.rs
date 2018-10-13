@@ -13,7 +13,7 @@ use std::fs::File;
 use util::Result;
 use uuid::Uuid;
 use std::sync::Arc;
-use reqwest::header::UserAgent;
+use reqwest::header::USER_AGENT;
 use reqwest::StatusCode;
 use mime_guess::get_mime_extensions_str;
 
@@ -51,10 +51,10 @@ impl MediaInfo {
         let mut data = vec![];
         let client = reqwest::Client::new();
         let mut resp = client.get(&self.fi.url)
-            .header(UserAgent::new("sms-irc"))
+            .header(USER_AGENT, "sms-irc")
             .send()?;
         debug!("response: {:?}", resp);
-        if resp.status() != StatusCode::Ok {
+        if resp.status() != StatusCode::OK {
             Err(format_err!("Status code {} when downloading", resp.status().as_u16()))?
         }
         resp.copy_to(&mut data)?;
