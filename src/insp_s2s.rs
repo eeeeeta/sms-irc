@@ -472,7 +472,8 @@ impl InspLink {
                     },
                     "FHOST" => {
                         if args.len() != 1 {
-                            warn!("Invalid FHOST received: {:?}", args);
+                            // These are pretty common, for some reason.
+                            debug!("Invalid FHOST received: {:?}", args);
                             return Ok(());
                         }
                         let host = args.into_iter().nth(0).unwrap();
