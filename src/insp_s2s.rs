@@ -329,7 +329,7 @@ impl InspLink {
         if let Some(a) = addr {
             if recreate {
                 info!("Contact for {} removed; recreating", a);
-                self.make_contact(a)?;
+                self.make_contact(a, false)?;
             }
         }
         Ok(())
@@ -582,7 +582,7 @@ impl InspLink {
         match cfc {
             ProcessMessages => self.process_messages()?,
             ProcessGroups => self.process_groups()?,
-            MakeContact(a) => self.make_contact(a)?,
+            MakeContact(a, wa) => self.make_contact(a, wa)?,
             DropContact(a) => self.drop_contact(a)?,
             LoadRecipients => {
                 // don't need to do anything; recipients
@@ -668,7 +668,7 @@ impl InspLink {
             let addr = util::un_normalize_address(&msg.phone_number)
                 .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
             if !self.has_contact(&addr) {
-                self.make_contact(addr.clone())?;
+                self.make_contact(addr.clone(), msg.text.is_some())?;
             }
             let uuid = self.contacts.get(&addr).unwrap().uuid.clone();
             if msg.pdu.is_some() {
@@ -713,7 +713,7 @@ impl InspLink {
         for recip in self.store.get_all_recipients()? {
             let addr = util::un_normalize_address(&recip.phone_number)
                .ok_or(format_err!("invalid phone number in db"))?;
-            self.make_contact(addr)?;
+            self.make_contact(addr, recip.whatsapp)?;
         }
         self.send_sid_line("ENDBURST", vec![], None)?;
         Ok(())

@@ -21,14 +21,15 @@ pub trait ContactManagerManager {
         self.setup_contact_for(recip, addr)?;
         Ok(())
     }
-    fn make_contact(&mut self, addr: PduAddress) -> Result<()> {
+    fn make_contact(&mut self, addr: PduAddress, is_wa: bool) -> Result<()> {
         if let Some(recip) = self.store().get_recipient_by_addr_opt(&addr)? {
             self.setup_recipient(recip)?;
         }
         else {
             let nick = util::make_nick_for_address(&addr);
-            info!("Creating new recipient for {} (nick {})", addr, nick);
-            let recip = self.store().store_recipient(&addr, &nick, false)?;
+            let watext = if is_wa { "WA recipient"} else { "recipient" };
+            info!("Creating new {} for {} (nick {})", watext, addr, nick);
+            let recip = self.store().store_recipient(&addr, &nick, is_wa)?;
             self.setup_recipient(recip)?;
         }
         Ok(())

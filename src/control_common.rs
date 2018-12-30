@@ -7,10 +7,13 @@ use util::Result;
 static HELPTEXT: &str = r#"sms-irc help:
 [in a /NOTICE to one of the ghosts]
 - !nick <nick>: change nickname
+- !wa: toggle WhatsApp mode on or off
+- !die: remove the ghost from your contact list
 [in this admin room]
 - !csq: check modem signal quality
 - !reg: check modem registration status
-- !sms <num>: start a conversation with a given phone number
+- !sms <num>: start an SMS conversation with a given phone number
+- !wa <num>: start a WhatsApp conversation with a given phone number
 - !wasetup: set up WhatsApp Web integration
 - !walogon: logon to WhatsApp Web using stored credentials
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
@@ -91,13 +94,14 @@ pub trait ControlCommon {
             "!modemreinit" => {
                 self.m_tx().unbounded_send(ModemCommand::ForceReinit).unwrap();
             },
-            "!sms" => {
+            x @ "!sms" | x @ "!wa" => {
                 if msg.get(1).is_none() {
-                    self.send_cb_message("!sms takes an argument.")?;
+                    self.send_cb_message(&format!("{} takes an argument.", x))?;
                     return Ok(());
                 }
                 let addr = msg[1].parse().unwrap();
-                self.cf_tx().unbounded_send(ContactFactoryCommand::MakeContact(addr)).unwrap();
+                let is_wa = x == "!wa";
+                self.cf_tx().unbounded_send(ContactFactoryCommand::MakeContact(addr, is_wa)).unwrap();
             },
             "!help" => {
                 for line in HELPTEXT.lines() {

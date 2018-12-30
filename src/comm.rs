@@ -47,7 +47,7 @@ pub enum WhatsappCommand {
 pub enum ContactFactoryCommand {
     ProcessMessages,
     ProcessGroups,
-    MakeContact(PduAddress),
+    MakeContact(PduAddress, bool),
     DropContact(PduAddress),
     LoadRecipients,
     UpdateAway(PduAddress, Option<String>)

@@ -42,7 +42,7 @@ impl Future for ContactFactory {
                 ProcessMessages => self.process_messages()?,
                 ProcessGroups => self.process_groups()?,
                 LoadRecipients => self.load_recipients()?,
-                MakeContact(addr) => self.make_contact(addr)?,
+                MakeContact(addr, wa) => self.make_contact(addr, wa)?,
                 DropContact(addr) => self.drop_contact(addr)?,
                 UpdateAway(addr, away) => self.update_away(addr, away)
             }
@@ -128,7 +128,7 @@ impl ContactFactory {
     }
     fn process_failures(&mut self) -> Result<()> {
         for addr in ::std::mem::replace(&mut self.failed_contacts, HashSet::new()) {
-            self.make_contact(addr)?;
+            self.make_contact(addr, false)?;
         }
         Ok(())
     }
@@ -172,7 +172,7 @@ impl ContactFactory {
                     c.add_command(ContactManagerCommand::ProcessMessages);
                     continue;
                 }
-                self.make_contact(addr)?;
+                self.make_contact(addr, msg.text.is_some())?;
             }
         }
         Ok(())

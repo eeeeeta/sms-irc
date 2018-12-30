@@ -22,6 +22,7 @@ use image::Luma;
 use qrcode::QrCode;
 use futures::{Future, Async, Poll, Stream};
 use failure::Error;
+use models::Recipient;
 use whatsapp_media::{MediaInfo, MediaResult};
 
 struct WhatsappHandler {
@@ -160,7 +161,7 @@ impl WhatsappManager {
             self.conn = Some(conn);
         }
         else {
-            info!("WhatsApp is not configured.");
+            info!("WhatsApp is not configured");
         }
         Ok(())
     }
@@ -312,6 +313,7 @@ impl WhatsappManager {
                 }
         };
         if let Some(addr) = util::jid_to_address(&from) {
+            let _ = self.get_wa_recipient(&from, &addr)?;
             self.store.store_plain_message(&addr, &text, group)?;
             self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                 .unwrap();
@@ -376,6 +378,24 @@ impl WhatsappManager {
         }
         Ok(())
     }
+    fn get_wa_recipient(&mut self, jid: &Jid, addr: &PduAddress) -> Result<Recipient> {
+        if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
+            Ok(recip)
+        }
+        else {
+            let mut nick = util::make_nick_for_address(&addr);
+            if let Some(ct) = self.contacts.get(jid) {
+                if let Some(ref name) = ct.name {
+                    nick = util::string_to_irc_nick(name);
+                }
+                else if let Some(ref name) = ct.notify {
+                    nick = util::string_to_irc_nick(name);
+                }
+            }
+            info!("Creating new WA recipient for {} (nick {})", addr, nick);
+            Ok(self.store.store_recipient(&addr, &nick, true)?)
+        }
+    }
     fn on_got_group_metadata(&mut self, grp: GroupMetadata) -> Result<()> {
         match self.store.get_group_by_jid_opt(&grp.id)? {
             Some(g) => {
@@ -389,23 +409,8 @@ impl WhatsappManager {
         let mut admins = vec![];
         for &(ref jid, admin) in grp.participants.iter() {
             if let Some(addr) = util::jid_to_address(jid) {
-                let recip = if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
-                    recip
-                }
-                else {
-                    let mut nick = util::make_nick_for_address(&addr);
-                    if let Some(ct) = self.contacts.get(jid) {
-                        if let Some(ref name) = ct.name {
-                            nick = util::string_to_irc_nick(name);
-                        }
-                        else if let Some(ref name) = ct.notify {
-                            nick = util::string_to_irc_nick(name);
-                        }
-                    }
-                    info!("Creating new (WA) recipient for {} (nick {})", addr, nick);
-                    self.store.store_recipient(&addr, &nick, true)?
-                };
-                self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr))
+                let recip = self.get_wa_recipient(&jid, &addr)?;
+                self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr, true))
                     .unwrap();
                 participants.push(recip.id);
                 if admin {
