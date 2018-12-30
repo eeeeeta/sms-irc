@@ -24,6 +24,7 @@ extern crate humansize;
 extern crate uuid;
 extern crate reqwest;
 extern crate mime_guess;
+extern crate tokio_signal;
 
 mod config;
 mod store;
@@ -48,7 +49,7 @@ use store::Store;
 use modem::ModemManager;
 use control::ControlBot;
 use comm::{ChannelMaker, InitParameters};
-use futures::Future;
+use futures::{Future, Stream};
 use contact_factory::ContactFactory;
 use futures::sync::mpsc::UnboundedSender;
 use comm::ControlBotCommand;
@@ -61,6 +62,7 @@ use log::Record;
 use std::fmt;
 use insp_s2s::InspLink;
 use whatsapp::WhatsappManager;
+use tokio_signal::unix::{Signal, SIGHUP};
 
 pub struct IrcLogWriter {
     sender: UnboundedSender<ControlBotCommand>,
@@ -137,6 +139,13 @@ fn main() -> Result<(), failure::Error> {
 
         error!("ModemManager failed: {}", e);
         panic!("modemmanager failed");
+    }));
+    let stream = Signal::new(SIGHUP).flatten_stream();
+    hdl.spawn(stream.for_each(|i| {
+        info!("Got signal {}", i);
+        Ok(())
+    }).map_err(|e| {
+        error!("Signal handler failed: {}", e);
     }));
     info!("Initializing WhatsApp");
     let wa = WhatsappManager::new(InitParameters {
