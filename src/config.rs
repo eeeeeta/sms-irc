@@ -5,6 +5,8 @@ pub struct Config {
     #[serde(default)]
     pub cmgl_secs: Option<u32>,
     #[serde(default)]
+    pub modem_restart_delay_ms: Option<u32>,
+    #[serde(default)]
     pub chan_loglevel: Option<String>,
     #[serde(default)]
     pub stdout_loglevel: Option<String>,
