@@ -23,7 +23,8 @@ pub enum ModemCommand {
     CmglFailed(HuaweiError),
     SendMessage(PduAddress, String),
     RequestCsq,
-    RequestReg
+    RequestReg,
+    ForceReinit
 }
 pub enum WhatsappCommand {
     StartRegistration,

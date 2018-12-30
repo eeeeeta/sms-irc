@@ -177,7 +177,8 @@ impl Future for ModemManager {
                 CmglFailed(e) => self.cmgl_failed(e),
                 SendMessage(addr, msg) => self.send_message(addr, msg),
                 RequestCsq => self.request_csq(),
-                RequestReg => self.request_reg()
+                RequestReg => self.request_reg(),
+                ForceReinit => self.report_modem_error(format_err!("Reinitialization requested"))
             }
         }
         Ok(Async::NotReady)

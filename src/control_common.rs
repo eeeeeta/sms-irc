@@ -15,8 +15,10 @@ static HELPTEXT: &str = r#"sms-irc help:
 - !walogon: logon to WhatsApp Web using stored credentials
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
 - !walist: list available WA groups
-- !waupdateall: refresh metadata for all WA groups (primarily for debugging)
 - !wadel <#channel>: unbridge IRC channel <#channel>
+[debug commands]
+- !waupdateall: refresh metadata for all WA groups (primarily for debugging)
+- !modemreinit: reinitialize connection to modem
 "#;
 
 pub trait ControlCommon {
@@ -85,6 +87,9 @@ pub trait ControlCommon {
             },
             "!reg" => {
                 self.m_tx().unbounded_send(ModemCommand::RequestReg).unwrap();
+            },
+            "!modemreinit" => {
+                self.m_tx().unbounded_send(ModemCommand::ForceReinit).unwrap();
             },
             "!sms" => {
                 if msg.get(1).is_none() {
