@@ -265,6 +265,17 @@ impl InspLink {
             .map_err(|e| e.into());
         Either::A(fut)
     }
+    fn set_wa_state(&mut self, addr: &PduAddress, wa_state: bool) -> Result<()> {
+        let (uid, is_wa) = {
+            let mut ct = self.contacts.get_mut(&addr).unwrap();
+            ct.wa_mode = wa_state;
+            self.store.update_recipient_wa(&addr, ct.wa_mode)?;
+            (ct.uuid.clone(), ct.wa_mode)
+        };
+        let host = self.host_for_wa(is_wa);
+        self.outbox.push(Message::new(Some(&uid), "FHOST", vec![&host], None)?);
+        Ok(())
+    }
     fn process_contact_admin_command(&mut self, addr: PduAddress, mesg: String) -> Result<()> {
         use chrono::Utc;
         debug!("processing contact admin command for {}: {}", addr, mesg);
@@ -296,15 +307,13 @@ impl InspLink {
                 self.store.update_recipient_nick(&addr, &msg[1])?;
             },
             "!wa" => {
-                let (is_wa, state) = {
-                    let mut ct = self.contacts.get_mut(&addr).unwrap();
-                    ct.wa_mode = !ct.wa_mode;
-                    self.store.update_recipient_wa(&addr, ct.wa_mode)?;
-                    (ct.wa_mode, if ct.wa_mode { "ENABLED" } else { "DISABLED" })
+                let is_wa = {
+                    let mut ct = self.contacts.get(&addr).unwrap();
+                    ct.wa_mode
                 };
-                let host = self.host_for_wa(is_wa);
-                self.outbox.push(Message::new(Some(&uid), "FHOST", vec![&host], None)?);
-                self.contact_message(&uid, "NOTICE", &auid, &format!("WhatsApp mode: {}", state))?;
+                let wa_state = !is_wa;
+                self.set_wa_state(&addr, wa_state)?;
+                self.contact_message(&uid, "NOTICE", &auid, &format!("WhatsApp mode: {}", if wa_state { "ENABLED" } else { "DISABLED" }))?;
             },
             "!die" => {
                 self.drop_contact(addr)?;
@@ -659,10 +668,13 @@ impl InspLink {
     fn process_messages(&mut self) -> Result<()> {
         use huawei_modem::convert::TryFrom;
 
-        if self.admin_uuid().is_none() {
-            warn!("Not processing messages; admin not connected");
-            return Ok(());
-        }
+        let auid = match self.admin_uuid() {
+            Some(x) => x,
+            None => {
+                warn!("Not processing messages; admin not connected");
+                return Ok(());
+            }
+        };
         for msg in self.store.get_all_messages()? {
             debug!("Processing message #{}", msg.id);
             let addr = util::un_normalize_address(&msg.phone_number)
@@ -670,12 +682,23 @@ impl InspLink {
             if !self.has_contact(&addr) {
                 self.make_contact(addr.clone(), msg.text.is_some())?;
             }
-            let uuid = self.contacts.get(&addr).unwrap().uuid.clone();
+            let (uuid, is_wa) = {
+                let ct = self.contacts.get(&addr).unwrap();
+                (ct.uuid.clone(), ct.wa_mode)
+            };
             if msg.pdu.is_some() {
                 let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
+                if is_wa {
+                    self.set_wa_state(&addr, false)?;
+                    self.contact_message(&uuid, "NOTICE", &auid, "Notice: SMS mode automatically enabled.")?;
+                }
                 self.process_msg_pdu(&uuid, msg, pdu)?;
             }
             else {
+                if !is_wa {
+                    self.set_wa_state(&addr, true)?;
+                    self.contact_message(&uuid, "NOTICE", &auid, "Notice: WhatsApp mode automatically enabled.")?;
+                }
                 self.process_msg_plain(&uuid, msg)?;
             }
         }

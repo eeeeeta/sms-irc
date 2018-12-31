@@ -125,9 +125,19 @@ impl ContactManager {
             debug!("Processing message #{}", msg.id);
             if msg.pdu.is_some() {
                 let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
+                if self.wa_mode {
+                    self.wa_mode = false;
+                    self.store.update_recipient_wa(&self.addr, self.wa_mode)?;
+                    self.irc.0.send_notice(&self.admin, "Notice: SMS mode automatically enabled.")?;
+                }
                 self.process_msg_pdu("", msg, pdu)?;
             }
             else {
+                if !self.wa_mode {
+                    self.wa_mode = true;
+                    self.store.update_recipient_wa(&self.addr, self.wa_mode)?;
+                    self.irc.0.send_notice(&self.admin, "Notice: WhatsApp mode automatically enabled.")?;
+                }
                 self.process_msg_plain("", msg)?;
             }
         }
