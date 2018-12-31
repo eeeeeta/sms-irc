@@ -1,4 +1,4 @@
-//! Experimental support fr WhatsApp.
+//! Experimental support for WhatsApp.
 
 use whatsappweb::connection::{WhatsappWebConnection, WhatsappWebHandler};
 use whatsappweb::connection::State as WaState;
@@ -24,6 +24,7 @@ use futures::{Future, Async, Poll, Stream};
 use failure::Error;
 use models::Recipient;
 use whatsapp_media::{MediaInfo, MediaResult};
+use regex::{Regex, Captures};
 
 struct WhatsappHandler {
     tx: Arc<UnboundedSender<WhatsappCommand>>
@@ -238,6 +239,28 @@ impl WhatsappManager {
         }
         Ok(())
     }
+    fn process_message<'a>(&mut self, msg: &'a str) -> String {
+        lazy_static! {
+            static ref BOLD_RE: Regex = Regex::new(r#"\*([^\*]+)\*"#).unwrap();
+            static ref ITALICS_RE: Regex = Regex::new(r#"_([^_]+)_"#).unwrap();
+            static ref MENTIONS_RE: Regex = Regex::new(r#"@(\d+)"#).unwrap();
+        }
+        let emboldened = BOLD_RE.replace_all(msg, "\x02$1\x02");
+        let italicised = ITALICS_RE.replace_all(&emboldened, "\x1D$1\x1D");
+        let store = &mut self.store;
+        let ret = MENTIONS_RE.replace_all(&italicised, |caps: &Captures| {
+            let pdua: PduAddress = caps[0].replace("@", "+").parse().unwrap();
+            match store.get_recipient_by_addr_opt(&pdua) {
+                Ok(Some(recip)) => recip.nick,
+                Ok(None) => format!("<+{}>", &caps[1]),
+                Err(e) => {
+                    warn!("Error searching for mention recipient: {}", e);
+                    format!("@{}", &caps[1])
+                }
+            }
+        });
+        ret.to_string()
+    }
     fn on_message(&mut self, msg: Box<WaMessage>) -> Result<()> {
         use whatsappweb::message::{Direction, Peer};
 
@@ -283,12 +306,13 @@ impl WhatsappManager {
         };
         let mut is_media = false;
         let text = match content {
-            ChatMessageContent::Text(s) => s,
-            ChatMessageContent::Unimplemented(det) => {
+            ChatMessageContent::Text(s) => self.process_message(&s),
+            ChatMessageContent::Unimplemented(mut det) => {
                 if det.trim() == "" {
                     debug!("Discarding empty unimplemented message.");
                     return Ok(());
                 }
+                det.truncate(128);
                 format!("[\x02\x0304unimplemented\x0f] {}", det)
             },
             mut x @ ChatMessageContent::Image(..) |

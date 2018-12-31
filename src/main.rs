@@ -25,6 +25,8 @@ extern crate uuid;
 extern crate reqwest;
 extern crate mime_guess;
 extern crate tokio_signal;
+extern crate regex;
+#[macro_use] extern crate lazy_static;
 
 mod config;
 mod store;
