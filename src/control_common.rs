@@ -22,6 +22,7 @@ static HELPTEXT: &str = r#"sms-irc help:
 [debug commands]
 - !waupdateall: refresh metadata for all WA groups (primarily for debugging)
 - !modemreinit: reinitialize connection to modem
+- !modempath <path>: TEMPORARILY use the modem at <path>, instead of the configured one.
 "#;
 
 pub trait ControlCommon {
@@ -93,6 +94,10 @@ pub trait ControlCommon {
             },
             "!modemreinit" => {
                 self.m_tx().unbounded_send(ModemCommand::ForceReinit).unwrap();
+            },
+            "!modempath" => {
+                let arg = msg.get(1).map(|x| x.to_string());
+                self.m_tx().unbounded_send(ModemCommand::UpdatePath(arg)).unwrap();
             },
             x @ "!sms" | x @ "!wa" => {
                 if msg.get(1).is_none() {

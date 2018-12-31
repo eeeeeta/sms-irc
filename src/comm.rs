@@ -24,7 +24,8 @@ pub enum ModemCommand {
     SendMessage(PduAddress, String),
     RequestCsq,
     RequestReg,
-    ForceReinit
+    ForceReinit,
+    UpdatePath(Option<String>)
 }
 pub enum WhatsappCommand {
     StartRegistration,

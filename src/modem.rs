@@ -178,7 +178,8 @@ impl Future for ModemManager {
                 SendMessage(addr, msg) => self.send_message(addr, msg),
                 RequestCsq => self.request_csq(),
                 RequestReg => self.request_reg(),
-                ForceReinit => self.report_modem_error(format_err!("Reinitialization requested"))
+                ForceReinit => self.reinit_modem(),
+                UpdatePath(p) => self.update_path(p)
             }
         }
         Ok(Async::NotReady)
@@ -192,6 +193,15 @@ impl ModemManager {
         if let Err(e) = self.poll_urc_rx() {
             self.report_modem_error(e);
         }
+    }
+    fn update_path(&mut self, path: Option<String>) {
+        info!("Updating modem path to {:?}", path);
+        self.modem_path = path;
+        self.reinit_modem();
+    }
+    fn reinit_modem(&mut self) {
+        self.inner.report_error(format_err!("Reinitialization requested"), 0);
+        self.poll_modem();
     }
     fn report_modem_error(&mut self, err: Error) {
         self.inner.report_error(err, self.delay_ms);
