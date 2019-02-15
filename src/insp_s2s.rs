@@ -40,6 +40,7 @@ pub struct InspLink {
     cfg: InspConfig,
     control_uuid: String,
     next_user_id: u32,
+    remote_sid: String,
     cf_rx: UnboundedReceiver<ContactFactoryCommand>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     cb_rx: UnboundedReceiver<ControlBotCommand>,
@@ -49,6 +50,7 @@ pub struct InspLink {
     users: HashMap<String, InspUser>,
     contacts: HashMap<PduAddress, InspContact>,
     contacts_uuid_pdua: HashMap<String, PduAddress>,
+    channel_topics: HashMap<String, String>,
     store: Store,
     outbox: Vec<Message>,
     channels: HashSet<String>,
@@ -256,9 +258,11 @@ impl InspLink {
                     users: HashMap::new(),
                     contacts: HashMap::new(),
                     contacts_uuid_pdua: HashMap::new(),
+                    channel_topics: HashMap::new(),
                     store,
                     outbox: vec![],
                     channels: HashSet::new(),
+                    remote_sid: "XXX".into(),
                     state: LinkState::TcpConnected
                 }
             })
@@ -364,7 +368,8 @@ impl InspLink {
                             if args[2] != "0" {
                                 Err(format_err!("Received 1-to-1 SERVER with hopcount != 0: {:?}", args))?
                             }
-                            info!("Verified server: {} ({})", args[0], suffix.unwrap());
+                            info!("Verified server: {} [{}] {})", args[0], args[3], suffix.unwrap());
+                            self.remote_sid = args[3].to_owned();
                             self.do_burst()?;
                             self.state = LinkState::BurstSent;
                         },
@@ -470,7 +475,7 @@ impl InspLink {
                         }
                     },
                     "NICK" => {
-                        if args.len() != 2 {
+                        if args.len() < 1 {
                             warn!("Invalid NICK received: {:?}", args);
                             return Ok(());
                         }
@@ -478,6 +483,15 @@ impl InspLink {
                             debug!("UUID {} changed nick to {}", prefix, prefix);
                             user.nick = args.into_iter().nth(0).unwrap();
                         }
+                    },
+                    "FTOPIC" => {
+                        if args.len() < 3 || suffix.is_none() {
+                            warn!("Invalid FTOPIC received: {:?}, {:?}", args, suffix);
+                            return Ok(());
+                        }
+                        let topic = suffix.unwrap();
+                        debug!("Topic for {} is: {}", args[0], topic);
+                        self.channel_topics.insert(args[0].to_string(), topic);
                     },
                     "FHOST" => {
                         if args.len() != 1 {
@@ -495,9 +509,14 @@ impl InspLink {
                         debug!("Receiving burst");
                     },
                     "ENDBURST" => {
-                        info!("Received end of netburst");
-                        self.state = LinkState::Linked;
-                        self.on_linked()?;
+                        if self.remote_sid == prefix {
+                            debug!("Received end of netburst");
+                            self.state = LinkState::Linked;
+                            self.on_linked()?;
+                        }
+                        else {
+                            debug!("Server {} finished bursting", prefix);
+                        }
                     },
                     other => {
                         debug!("Received unimplemented raw command {}: {:?} {:?}", other, args, suffix);
@@ -511,7 +530,7 @@ impl InspLink {
         Ok(())
     }
     fn on_linked(&mut self) -> Result<()> {
-        info!("Link established!");
+        info!("Link established to remote server.");
         self.outbox.push(Message::new(Some(&self.control_uuid), "JOIN", vec![&self.cfg.log_chan], None)?);
         self.process_groups()?;
         self.process_messages()?;
@@ -570,6 +589,15 @@ impl InspLink {
                         };
                         self.outbox.push(Message::new(Some(&self.cfg.sid), "MODE", vec![&grp.channel, mode, &ct.uuid], None)?);
                     }
+                }
+            }
+            if self.cfg.set_topics {
+                // FIXME: this clone isn't nice :(
+                let topic = self.channel_topics.entry(grp.channel.clone()).or_insert("".into());
+                if topic == "" || self.cfg.clobber_topics && topic as &str != grp.topic {
+                    // doing this makes Atheme angry.
+                    self.outbox.push(Message::new(Some(&self.cfg.sid), "TOPIC", vec![&grp.channel], Some(&grp.topic))?);
+                    *topic = grp.topic;
                 }
             }
         }

@@ -50,5 +50,9 @@ pub struct InspConfig {
     pub server_name: String,
     pub log_chan: String,
     pub hostname: String,
-    pub port: u16
+    pub port: u16,
+    #[serde(default)]
+    pub set_topics: bool,
+    #[serde(default)]
+    pub clobber_topics: bool
 }

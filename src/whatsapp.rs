@@ -336,21 +336,25 @@ impl WhatsappManager {
                     }
                 }
         };
-        if let Some(addr) = util::jid_to_address(&from) {
-            let _ = self.get_wa_recipient(&from, &addr)?;
-            self.store.store_plain_message(&addr, &text, group)?;
-            self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
-                .unwrap();
-        }
-        else {
-            warn!("couldn't make address for jid {}", from.to_string());
-        }
+        self.store_message(&from, &text, group)?;
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
                 if !is_media && !is_ours {
                     conn.send_message_read(id, p);
                 }
             }
+        }
+        Ok(())
+    }
+    fn store_message(&mut self, from: &Jid, text: &str, group: Option<i32>) -> Result<()> {
+        if let Some(addr) = util::jid_to_address(from) {
+            let _ = self.get_wa_recipient(from, &addr)?;
+            self.store.store_plain_message(&addr, &text, group)?;
+            self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
+                .unwrap();
+        }
+        else {
+            warn!("couldn't make address for jid {}", from.to_string());
         }
         Ok(())
     }
@@ -601,10 +605,49 @@ impl WhatsappManager {
                     info!("Group {} was newly created.", meta.id.to_string());
                 }
             },
-            GroupParticipantsChange { group, change, inducer, participants } => {
-                info!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
-                if self.store.get_group_by_jid_opt(&group)?.is_some() {
+            GroupSubjectChange { group, subject, subject_owner, .. } => {
+                if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
+                    self.store_message(&subject_owner, &format!("\x01ACTION changed the subject to '{}'\x01", subject), Some(id))?;
                     self.request_update_group(group)?;
+                }
+            },
+            GroupParticipantsChange { group, change, inducer, participants } => {
+                use whatsappweb::GroupParticipantsChange;
+
+                debug!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
+                if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
+                    if let Some(inducer) = inducer {
+                        let mut nicks = vec![];
+                        if let Some(addr) = util::jid_to_address(&inducer) {
+                            let recip = self.get_wa_recipient(&inducer, &addr)?;
+                            nicks.push(recip.nick);
+                        }
+                        let action = match change {
+                            GroupParticipantsChange::Add => "added",
+                            GroupParticipantsChange::Remove => "removed",
+                            GroupParticipantsChange::Promote => "promoted",
+                            GroupParticipantsChange::Demote => "demoted",
+                        };
+                        self.store_message(&inducer, &format!("\x01ACTION {} user(s): {}\x01", action, nicks.join(", ")), Some(id))?;
+                    }
+                    self.request_update_group(group)?;
+                }
+            },
+            StatusChange(user, status) => {
+                if let Some(addr) = util::jid_to_address(&user) {
+                    let recip = self.get_wa_recipient(&user, &addr)?;
+                    info!("{} changed their status to: {}", recip.nick, status);
+                }
+            },
+            PictureChange { jid, removed } => {
+                if let Some(addr) = util::jid_to_address(&jid) {
+                    let recip = self.get_wa_recipient(&jid, &addr)?;
+                    if !removed {
+                        info!("{} changed their profile photo.", recip.nick);
+                    }
+                    else {
+                        info!("{} removed their profile photo.", recip.nick);
+                    }
                 }
             },
             Battery(level) => {
