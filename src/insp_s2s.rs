@@ -368,7 +368,7 @@ impl InspLink {
                             if args[2] != "0" {
                                 Err(format_err!("Received 1-to-1 SERVER with hopcount != 0: {:?}", args))?
                             }
-                            info!("Verified server: {} [{}] {})", args[0], args[3], suffix.unwrap());
+                            info!("Verified server: {} [{}] ({})", args[0], args[3], suffix.unwrap());
                             self.remote_sid = args[3].to_owned();
                             self.do_burst()?;
                             self.state = LinkState::BurstSent;
