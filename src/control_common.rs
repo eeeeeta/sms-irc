@@ -19,6 +19,8 @@ static HELPTEXT: &str = r#"sms-irc help:
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
 - !walist: list available WA groups
 - !wadel <#channel>: unbridge IRC channel <#channel>
+- !wagetavatar <nick>: update the avatar for <nick>
+- !wagetallavatars: update all WA avatars
 [debug commands]
 - !waupdateall: refresh metadata for all WA groups (primarily for debugging)
 - !modemreinit: reinitialize connection to modem
@@ -69,6 +71,18 @@ pub trait ControlCommon {
                     return Ok(());
                 }
                 self.wa_tx().unbounded_send(WhatsappCommand::GroupRemove(msg[1].into()))
+                    .unwrap();
+            },
+            "!wagetavatar" => {
+                if msg.get(1).is_none() {
+                    self.send_cb_message("!wagetavatar takes an argument.")?;
+                    return Ok(());
+                }
+                self.wa_tx().unbounded_send(WhatsappCommand::AvatarUpdate(msg[1].into()))
+                    .unwrap();
+            },
+            "!wagetallavatars" => {
+                self.wa_tx().unbounded_send(WhatsappCommand::AvatarUpdateAll)
                     .unwrap();
             },
             "!wabridge" => {
