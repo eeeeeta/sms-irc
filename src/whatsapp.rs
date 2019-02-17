@@ -172,7 +172,12 @@ impl WhatsappManager {
         Ok(())
     }
     fn avatar_url(&mut self, pdua: PduAddress, url: Option<String>) -> Result<()> {
-        info!("Got new avatar for {}: {:?}", pdua, url);
+        if url.is_some() {
+            info!("Got new avatar for {}", pdua);
+        }
+        else {
+            info!("Removing old avatar for {}", pdua);
+        }
         self.store.update_recipient_avatar_url(&pdua, url)?;
         self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessAvatars)
             .unwrap();

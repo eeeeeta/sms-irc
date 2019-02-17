@@ -626,24 +626,28 @@ impl InspLink {
             None => return Ok(())
         };
         for recip in self.store.get_all_recipients()? {
-            if let Some(avatar_url) = recip.avatar_url {
-                let addr = util::un_normalize_address(&recip.phone_number)
-                    .ok_or(format_err!("invalid phone number in db"))?;
-                if let Some(ic) = self.contacts.get(&addr) {
-                    if let Some(iu) = self.users.get(&ic.uuid) {
-                        let query = format!("{}!{}@%.{}", iu.nick, iu.gecos, self.cfg.server_name);
-                        let res = qdb.execute("UPDATE sender SET avatarurl = $1 WHERE sender LIKE $2",
-                                    &[&avatar_url, &query]);
-                        match res {
-                            Ok(p) => {
-                                processed += p;
-                            },
-                            Err(e) => {
-                                warn!("Failed to update avatar for {}: {}", iu.nick, e);
-                            }
+            let addr = util::un_normalize_address(&recip.phone_number)
+                .ok_or(format_err!("invalid phone number in db"))?;
+            if let Some(ic) = self.contacts.get(&addr) {
+                if let Some(iu) = self.users.get(&ic.uuid) {
+                    let query = format!("{}!{}@%.{}", iu.nick, iu.gecos, self.cfg.server_name);
+                    let res = qdb.execute("UPDATE sender SET avatarurl = $1 WHERE sender LIKE $2",
+                                          &[&recip.avatar_url, &query]);
+                    match res {
+                        Ok(p) => {
+                            processed += p;
+                        },
+                        Err(e) => {
+                            warn!("Failed to update avatar for {}: {}", iu.nick, e);
                         }
                     }
                 }
+                else {
+                    warn!("avatars: no user for contact {}", addr);
+                }
+            }
+            else {
+                warn!("avatars: no contact for address {}", addr);
             }
         }
         info!("Updated {} Quassel avatar entries.", processed);
