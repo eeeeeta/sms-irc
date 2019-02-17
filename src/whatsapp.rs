@@ -151,7 +151,7 @@ impl WhatsappManager {
         if let Some(recip) = self.store.get_recipient_by_nick_opt(nick)? {
             let addr = util::un_normalize_address(&recip.phone_number)
                 .ok_or(format_err!("invalid phone number in db"))?;
-            self.cb_respond(format!("Updating nick for {}...", addr));
+            self.cb_respond(format!("Updating avatar for {}...", addr));
             self.avatar_update(addr)?;
         }
         else {
