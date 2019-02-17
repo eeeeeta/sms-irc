@@ -697,6 +697,7 @@ impl WhatsappManager {
                     else {
                         info!("{} removed their profile photo.", recip.nick);
                     }
+                    self.avatar_update(addr)?;
                 }
             },
             Battery(level) => {
