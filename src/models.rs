@@ -6,14 +6,16 @@ pub struct Recipient {
     pub id: i32,
     pub phone_number: String,
     pub nick: String,
-    pub whatsapp: bool
+    pub whatsapp: bool,
+    pub avatar_url: Option<String>
 }
 #[derive(Insertable)]
 #[table_name="recipients"]
 pub struct NewRecipient<'a> {
     pub phone_number: &'a str,
     pub nick: &'a str,
-    pub whatsapp: bool
+    pub whatsapp: bool,
+    pub avatar_url: Option<&'a str>
 }
 #[derive(Queryable, Debug)]
 pub struct Message {

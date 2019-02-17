@@ -125,8 +125,57 @@ impl WhatsappManager {
                     self.on_message(msg)?;
                 }
             },
-            MediaFinished(r) => self.media_finished(r)?
+            MediaFinished(r) => self.media_finished(r)?,
+            AvatarUrl(pdua, url) => self.avatar_url(pdua, url)?,
+            AvatarUpdate(nick) => self.avatar_update_by_nick(&nick)?,
+            AvatarUpdateAll => self.avatar_update_all()?
         }
+        Ok(())
+    }
+    fn avatar_update_by_nick(&mut self, nick: &str) -> Result<()> {
+        if let Some(recip) = self.store.get_recipient_by_nick_opt(nick)? {
+            let addr = util::un_normalize_address(&recip.phone_number)
+                .ok_or(format_err!("invalid phone number in db"))?;
+            self.cb_respond(format!("Updating nick for {}...", addr));
+            self.avatar_update(addr)?;
+        }
+        else {
+            self.cb_respond("Nick not found in database.".into());
+        }
+        Ok(())
+    }
+    fn avatar_update_all(&mut self) -> Result<()> {
+        for recip in self.store.get_all_recipients()? {
+            if recip.whatsapp {
+                let addr = util::un_normalize_address(&recip.phone_number)
+                    .ok_or(format_err!("invalid phone number in db"))?;
+                self.avatar_update(addr)?;
+            }
+        }
+        Ok(())
+    }
+    fn avatar_update(&mut self, pdua: PduAddress) -> Result<()> {
+        match Jid::from_phonenumber(format!("{}", pdua)) {
+            Ok(jid) => {
+                if let Some(ref mut conn) = self.conn {
+                    let tx2 = self.wa_tx.clone();
+                    conn.get_profile_picture(&jid, Box::new(move |pic| {
+                        tx2.unbounded_send(WhatsappCommand::AvatarUrl(pdua.clone(), pic.map(|x| x.to_string())))
+                            .unwrap();
+                    }));
+                }
+            },
+            Err(e) => {
+                warn!("couldn't make jid from phonenumber {}: {}", pdua, e);
+            }
+        }
+        Ok(())
+    }
+    fn avatar_url(&mut self, pdua: PduAddress, url: Option<String>) -> Result<()> {
+        info!("Got new avatar for {}", pdua);
+        self.store.update_recipient_avatar_url(&pdua, url)?;
+        self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessAvatars)
+            .unwrap();
         Ok(())
     }
     fn media_finished(&mut self, r: MediaResult) -> Result<()> {

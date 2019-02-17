@@ -44,7 +44,10 @@ impl Future for ContactFactory {
                 LoadRecipients => self.load_recipients()?,
                 MakeContact(addr, wa) => self.make_contact(addr, wa)?,
                 DropContact(addr) => self.drop_contact(addr)?,
-                UpdateAway(addr, away) => self.update_away(addr, away)
+                UpdateAway(addr, away) => self.update_away(addr, away),
+                ProcessAvatars => {
+                    // FIXME: implement
+                }
             }
         }
         let mut to_remove = vec![];

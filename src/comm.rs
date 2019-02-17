@@ -43,11 +43,15 @@ pub enum WhatsappCommand {
     PersistentChanged(WaPersistentSession),
     Disconnect(WaDisconnectReason),
     Message(bool, Box<WaMessage>),
-    MediaFinished(MediaResult)
+    MediaFinished(MediaResult),
+    AvatarUrl(PduAddress, Option<String>),
+    AvatarUpdate(String),
+    AvatarUpdateAll
 }
 pub enum ContactFactoryCommand {
     ProcessMessages,
     ProcessGroups,
+    ProcessAvatars,
     MakeContact(PduAddress, bool),
     DropContact(PduAddress),
     LoadRecipients,

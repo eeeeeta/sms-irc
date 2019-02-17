@@ -26,6 +26,7 @@ table! {
         phone_number -> Varchar,
         nick -> Varchar,
         whatsapp -> Bool,
+        avatar_url -> Nullable<Varchar>,
     }
 }
 
