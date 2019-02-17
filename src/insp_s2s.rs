@@ -20,7 +20,6 @@ use control_common::ControlCommon;
 use insp_user::InspUser;
 use config::InspConfig;
 use std::net::{SocketAddr, ToSocketAddrs};
-use postgres::Connection as PgConn;
 
 pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1203";
 struct InspContact {
@@ -56,7 +55,6 @@ pub struct InspLink {
     outbox: Vec<Message>,
     channels: HashSet<String>,
     state: LinkState,
-    quassel: Option<PgConn>
 }
 
 impl Future for InspLink {
@@ -235,7 +233,7 @@ impl InspLink {
             format!("s.{}", self.cfg.server_name)
         }
     }
-    pub fn new(p: InitParameters<InspConfig>, qdb: Option<PgConn>) -> impl Future<Item = Self, Error = Error> {
+    pub fn new(p: InitParameters<InspConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
         let cfg = p.cfg2.clone();
         let cf_rx = p.cm.cf_rx.take().unwrap();
@@ -266,7 +264,6 @@ impl InspLink {
                     channels: HashSet::new(),
                     remote_sid: "XXX".into(),
                     state: LinkState::TcpConnected,
-                    quassel: qdb
                 }
             })
             .map_err(|e| e.into());
@@ -619,40 +616,6 @@ impl InspLink {
         self.outbox.push(Message::new(Some(uid), kind, vec![target], Some(message))?);
         Ok(())
     }
-    fn process_avatars(&mut self) -> Result<()> {
-        let mut processed = 0;
-        let qdb = match self.quassel {
-            Some(ref mut qdb) => qdb,
-            None => return Ok(())
-        };
-        for recip in self.store.get_all_recipients()? {
-            let addr = util::un_normalize_address(&recip.phone_number)
-                .ok_or(format_err!("invalid phone number in db"))?;
-            if let Some(ic) = self.contacts.get(&addr) {
-                if let Some(iu) = self.users.get(&ic.uuid) {
-                    let query = format!("{}!{}@%.{}", iu.nick, iu.gecos, self.cfg.server_name);
-                    let res = qdb.execute("UPDATE sender SET avatarurl = $1 WHERE sender LIKE $2",
-                                          &[&recip.avatar_url, &query]);
-                    match res {
-                        Ok(p) => {
-                            processed += p;
-                        },
-                        Err(e) => {
-                            warn!("Failed to update avatar for {}: {}", iu.nick, e);
-                        }
-                    }
-                }
-                else {
-                    warn!("avatars: no user for contact {}", addr);
-                }
-            }
-            else {
-                warn!("avatars: no contact for address {}", addr);
-            }
-        }
-        info!("Updated {} Quassel avatar entries.", processed);
-        Ok(())
-    }
     fn handle_cf_command(&mut self, cfc: ContactFactoryCommand) -> Result<()> {
         use self::ContactFactoryCommand::*;
 
@@ -670,7 +633,11 @@ impl InspLink {
                     self.outbox.push(Message::new(Some(&ct.uuid), "AWAY", vec![], text.as_ref().map(|x| x as &str))?);
                 }
             },
-            ProcessAvatars => self.process_avatars()?
+            ProcessAvatars => {
+                // FIXME: implement
+                //
+                // We'd need IRCv3 METADATA or something for this.
+            }
         }
         Ok(())
     }

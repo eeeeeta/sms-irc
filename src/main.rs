@@ -27,7 +27,6 @@ extern crate mime_guess;
 extern crate tokio_signal;
 extern crate regex;
 #[macro_use] extern crate lazy_static;
-extern crate postgres;
 
 mod config;
 mod store;
@@ -126,17 +125,6 @@ fn main() -> Result<(), failure::Error> {
     }
     info!("Connecting to database");
     let store = Store::new(&config)?;
-    let quassel = if let Some(ref dbu) = config.quassel_database_url {
-        info!("Connecting to Quassel database");
-        postgres::Connection::connect(dbu as &str, postgres::TlsMode::None)
-            .map_err(|e| {
-                warn!("Failed to connect to Quassel DB: {}", e);
-            })
-            .ok()
-    }
-    else {
-        None
-    };
     info!("Initializing tokio");
     let mut core = Core::new()?;
     let hdl = core.handle();
@@ -206,7 +194,7 @@ fn main() -> Result<(), failure::Error> {
             store: store.clone(),
             cm: &mut cm,
             hdl: &hdl
-        }, quassel))?;
+        }))?;
         let _ = core.run(fut.map_err(|e| {
             // FIXME: restartability
 

@@ -19,6 +19,7 @@ static HELPTEXT: &str = r#"sms-irc help:
 - !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
 - !walist: list available WA groups
 - !wadel <#channel>: unbridge IRC channel <#channel>
+- !avatar <nick>: show avatar for <nick>
 - !wagetavatar <nick>: update the avatar for <nick>
 - !wagetallavatars: update all WA avatars
 [debug commands]
@@ -71,6 +72,14 @@ pub trait ControlCommon {
                     return Ok(());
                 }
                 self.wa_tx().unbounded_send(WhatsappCommand::GroupRemove(msg[1].into()))
+                    .unwrap();
+            },
+            "!avatar" => {
+                if msg.get(1).is_none() {
+                    self.send_cb_message("!avatar takes an argument.")?;
+                    return Ok(());
+                }
+                self.wa_tx().unbounded_send(WhatsappCommand::AvatarShow(msg[1].into()))
                     .unwrap();
             },
             "!wagetavatar" => {

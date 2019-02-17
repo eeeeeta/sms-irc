@@ -22,8 +22,6 @@ pub struct Config {
     pub client: Option<IrcClientConfig>,
     #[serde(default)]
     pub insp_s2s: Option<InspConfig>,
-    #[serde(default)]
-    pub quassel_database_url: Option<String>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {

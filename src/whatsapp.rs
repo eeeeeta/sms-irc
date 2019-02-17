@@ -128,7 +128,22 @@ impl WhatsappManager {
             MediaFinished(r) => self.media_finished(r)?,
             AvatarUrl(pdua, url) => self.avatar_url(pdua, url)?,
             AvatarUpdate(nick) => self.avatar_update_by_nick(&nick)?,
+            AvatarShow(nick) => self.avatar_show_by_nick(&nick)?,
             AvatarUpdateAll => self.avatar_update_all()?
+        }
+        Ok(())
+    }
+    fn avatar_show_by_nick(&mut self, nick: &str) -> Result<()> {
+        if let Some(recip) = self.store.get_recipient_by_nick_opt(nick)? {
+            if let Some(au) = recip.avatar_url {
+                self.cb_respond(format!("{}'s avatar: {}", nick, au));
+            }
+            else {
+                self.cb_respond(format!("{} doesn't have an avatar.", nick));
+            }
+        }
+        else {
+            self.cb_respond("Nick not found in database.".into());
         }
         Ok(())
     }

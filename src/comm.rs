@@ -46,6 +46,7 @@ pub enum WhatsappCommand {
     MediaFinished(MediaResult),
     AvatarUrl(PduAddress, Option<String>),
     AvatarUpdate(String),
+    AvatarShow(String),
     AvatarUpdateAll
 }
 pub enum ContactFactoryCommand {
