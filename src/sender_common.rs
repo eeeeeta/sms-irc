@@ -6,6 +6,7 @@ use models::Message;
 use huawei_modem::pdu::DeliverPdu;
 use store::Store;
 use util::Result;
+use std::convert::TryFrom;
 
 /// The maximum message size sent over IRC.
 static MESSAGE_MAX_LEN: usize = 350;
@@ -58,8 +59,6 @@ pub trait Sender {
         Ok(())
     }
     fn process_msg_pdu(&mut self, nick: &str, msg: Message, pdu: DeliverPdu) -> Result<()> {
-        use huawei_modem::convert::TryFrom;
-
         match pdu.get_message_data().decode_message() {
             Ok(m) => {
                 if let Some(cd) = m.udh.and_then(|x| x.get_concatenated_sms_data()) {
@@ -72,7 +71,7 @@ pub trait Sender {
                     let mut concatenated = String::new();
                     let mut pdus = vec![];
                     for msg in msgs.iter() {
-                        let dec = DeliverPdu::try_from(msg.pdu.as_ref().expect("csms message has no pdu"))?
+                        let dec = DeliverPdu::try_from(msg.pdu.as_ref().expect("csms message has no pdu") as &[u8])?
                             .get_message_data()
                             .decode_message()?;
                         pdus.push(dec);

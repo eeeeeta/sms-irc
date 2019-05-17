@@ -109,7 +109,7 @@ impl ContactManager {
     }
     
     fn process_messages(&mut self) -> Result<()> {
-        use huawei_modem::convert::TryFrom;
+        use std::convert::TryFrom;
 
         if !self.connected {
             debug!("Not processing messages yet; not connected");
@@ -124,7 +124,7 @@ impl ContactManager {
         for msg in msgs {
             debug!("Processing message #{}", msg.id);
             if msg.pdu.is_some() {
-                let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
+                let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap() as &[u8])?;
                 if self.wa_mode {
                     self.wa_mode = false;
                     self.store.update_recipient_wa(&self.addr, self.wa_mode)?;

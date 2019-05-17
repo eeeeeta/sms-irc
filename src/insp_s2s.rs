@@ -702,7 +702,7 @@ impl InspLink {
         Ok(uuid)
     }
     fn process_messages(&mut self) -> Result<()> {
-        use huawei_modem::convert::TryFrom;
+        use std::convert::TryFrom;
 
         let auid = match self.admin_uuid() {
             Some(x) => x,
@@ -723,7 +723,7 @@ impl InspLink {
                 (ct.uuid.clone(), ct.wa_mode)
             };
             if msg.pdu.is_some() {
-                let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap())?;
+                let pdu = DeliverPdu::try_from(msg.pdu.as_ref().unwrap() as &[u8])?;
                 if is_wa {
                     self.set_wa_state(&addr, false)?;
                     self.contact_message(&uuid, "NOTICE", &auid, "Notice: SMS mode automatically enabled.")?;

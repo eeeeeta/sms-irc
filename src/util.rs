@@ -1,6 +1,6 @@
 //! Helpful utility functions.
 use huawei_modem::pdu::{PduAddress, AddressType, HexData, PhoneNumber};
-use huawei_modem::convert::TryFrom;
+use std::convert::TryFrom;
 use whatsappweb::Jid;
 
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;

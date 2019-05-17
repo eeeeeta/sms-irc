@@ -35,11 +35,11 @@ features = ["postgres", "serde_json"]
 version = "1.0"
 
 [dependencies.huawei-modem]
-git = "https://github.com/eeeeeta/huawei-modem"
+git = "https://git.theta.eu.org/huawei-modem.git/"
 
 [dependencies.uuid]
 features = ["v4"]
 version = "0.6"
 
 [dependencies.whatsappweb]
-git = "https://github.com/eeeeeta/whatsappweb-rs"
+git = "https://git.theta.eu.org/whatsappweb-rs.git/"
