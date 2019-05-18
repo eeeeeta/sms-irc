@@ -21,7 +21,9 @@ use insp_user::InspUser;
 use config::InspConfig;
 use std::net::{SocketAddr, ToSocketAddrs};
 
-pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1203";
+pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1202";
+pub static INSP_PROTOCOL_VERSION: &str = "1202";
+
 struct InspContact {
     uuid: String,
     channels: Vec<String>,
@@ -750,7 +752,7 @@ impl InspLink {
         let capabs = vec![INSP_PROTOCOL_CAPAB, "NICKMAX=100", "CHANMAX=100", "MAXMODES=100", 
                           "IDENTMAX=100", "MAXQUIT=100", "MAXTOPIC=100", "MAXKICK=100",
                           "MAXGECOS=100", "MAXAWAY=100"];
-        self.send_sid_line("CAPAB", vec!["START"], None)?;
+        self.send_sid_line("CAPAB", vec!["START", INSP_PROTOCOL_VERSION], None)?;
         for capab in capabs {
             self.send_sid_line("CAPAB", vec!["CAPABILITIES"], Some(capab))?;
         }
