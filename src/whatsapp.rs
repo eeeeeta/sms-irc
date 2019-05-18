@@ -687,9 +687,11 @@ impl WhatsappManager {
                 if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
                     if let Some(inducer) = inducer {
                         let mut nicks = vec![];
-                        if let Some(addr) = util::jid_to_address(&inducer) {
-                            let recip = self.get_wa_recipient(&inducer, &addr)?;
-                            nicks.push(recip.nick);
+                        for participant in participants {
+                            if let Some(addr) = util::jid_to_address(&participant) {
+                                let recip = self.get_wa_recipient(&participant, &addr)?;
+                                nicks.push(recip.nick);
+                            }
                         }
                         let action = match change {
                             GroupParticipantsChange::Add => "added",
