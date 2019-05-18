@@ -16,9 +16,16 @@ pub trait Sender {
     fn store(&mut self) -> &mut Store;
     fn private_target(&mut self) -> String;
     fn send_irc_message(&mut self, _from_nick: &str, _to: &str, _msg: &str) -> Result<()>;
+    /// Ensure that the admin user is joined to the given channel, if possible.
+    ///
+    /// This uses, e.g. SVSJOIN to force-join the user to the channel.
+    fn ensure_joined(&mut self, _ch: &str) -> Result<()> {
+        Ok(())
+    }
     fn send_raw_message(&mut self, from_nick: &str, msg: &str, group_target: Option<i32>) -> Result<()> {
         let dest = if let Some(g) = group_target {
             let grp = self.store().get_group_by_id(g)?;
+            self.ensure_joined(&grp.channel)?;
             grp.channel
         }
         else {

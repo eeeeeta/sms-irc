@@ -65,6 +65,7 @@ pub struct WhatsappManager {
     qr_path: String,
     media_path: String,
     dl_path: String,
+    autocreate: Option<String>,
     our_jid: Option<Jid>
 }
 impl Future for WhatsappManager {
@@ -89,6 +90,7 @@ impl WhatsappManager {
         let qr_path = p.cfg.qr_path.clone().unwrap_or("/tmp/wa_qr.png".into());
         let media_path = p.cfg.media_path.clone().unwrap_or("/tmp/wa_media".into());
         let dl_path = p.cfg.dl_path.clone().unwrap_or("file:///tmp/wa_media".into());
+        let autocreate = p.cfg.autocreate_prefix.clone();
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
         Self {
@@ -99,7 +101,7 @@ impl WhatsappManager {
             connected: false,
             our_jid: None,
             wa_tx: Arc::new(wa_tx),
-            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path
+            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -111,7 +113,7 @@ impl WhatsappManager {
             QrCode(qr) => self.on_qr(qr)?,
             SendGroupMessage(to, cont) => self.send_group_message(to, cont)?,
             SendDirectMessage(to, cont) => self.send_direct_message(to, cont)?,
-            GroupAssociate(jid, to) => self.group_associate(jid, to)?,
+            GroupAssociate(jid, to) => self.group_associate_handler(jid, to)?,
             GroupList => self.group_list()?,
             GroupUpdateAll => self.group_update_all()?,
             GroupRemove(grp) => self.group_remove(grp)?,
@@ -367,8 +369,20 @@ impl WhatsappManager {
                     Some(grp.id)
                 }
                 else {
-                    info!("Received message for unbridged group {}, ignoring...", gid.to_string());
-                    return Ok(());
+                    if self.autocreate.is_some() {
+                        info!("Attempting to autocreate channel for unbridged group {}...", gid.to_string());
+                        match self.group_autocreate_from_unbridged(gid) {
+                            Ok(id) => Some(id),
+                            Err(e) => {
+                                warn!("Autocreation failed: {}", e);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    else {
+                        info!("Received message for unbridged group {}, ignoring...", gid.to_string());
+                        return Ok(());
+                    }
                 }
             },
             None => None
@@ -543,28 +557,75 @@ impl WhatsappManager {
             }));
         Ok(())
     }
-    fn group_associate(&mut self, jid: Jid, chan: String) -> Result<()> {
+    /// Auto-create a group after a GroupIntroduction message.
+    ///
+    /// This is the nicest way to autocreate a group, because we get all the metadata straight off.
+    fn group_autocreate_from_intro(&mut self, meta: GroupMetadata) -> Result<()> {
+        let jid = meta.id.to_string();
+        info!("Attempting to autocreate channel for new group {}...", jid);
+        let subj = meta.subject.clone();
+        match self.group_autocreate(meta) {
+            Ok((id, chan)) => {
+                self.cb_respond(format!("Automatically bridged new group '{}' to channel {} (id {})", subj, chan, id));
+            },
+            Err(e) => {
+                warn!("Autocreation failed for group {}: {}", jid, e);
+                self.cb_respond(format!("Failed to autocreate new group {} - check logs for details.", jid));
+            }
+        }
+        Ok(())
+    }
+    /// Auto-create a group that we've received an unbridged message for.
+    ///
+    /// Here, we have to hope that we've got data in our initial chat list for this group;
+    /// otherwise, we can't know the subject of the group in order to autocreate it.
+    fn group_autocreate_from_unbridged(&mut self, jid: Jid) -> Result<i32> {
+        let chat = match self.chats.get(&jid) {
+            Some(c) => c.clone(),
+            None => bail!("chat not in chat list")
+        };
+        let name = match chat.name {
+            Some(n) => n,
+            None => bail!("chat unnamed")
+        };
+        let irc_subject = util::string_to_irc_chan(&name);
+        let chan = format!("{}-{}", self.autocreate.as_ref().unwrap(), irc_subject);
+        let id = self.group_associate(jid, chan.clone(), true)?;
+        Ok(id)
+    }
+    fn group_autocreate(&mut self, meta: GroupMetadata) -> Result<(i32, String)> {
+        let irc_subject = util::string_to_irc_chan(&meta.subject);
+        let chan = format!("{}-{}", self.autocreate.as_ref().unwrap(), irc_subject);
+        let id = self.group_associate(meta.id.clone(), chan.clone(), false)?;
+        self.on_got_group_metadata(meta)?;
+        Ok((id, chan))
+    }
+    fn group_associate(&mut self, jid: Jid, chan: String, request_update: bool) -> Result<i32> {
         if let Some(grp) = self.store.get_group_by_jid_opt(&jid)? {
-            self.cb_respond(format!("that group already exists (channel {})!", grp.channel));
-            return Ok(());
+            bail!("that group already exists (channel {})!", grp.channel);
         }
         if let Some(grp) = self.store.get_group_by_chan_opt(&chan)? {
-            self.cb_respond(format!("that channel is already used for a group (jid {})!", grp.jid));
-            return Ok(());
+            bail!("that channel is already used for a group (jid {})!", grp.jid);
         }
         if self.conn.is_none() || !self.connected {
-            self.cb_respond("we aren't connected to WhatsApp!".into());
-            return Ok(());
+            bail!("we aren't connected to WhatsApp!");
         }
         if !jid.is_group {
-            self.cb_respond("that jid isn't a group!".into());
-            return Ok(());
+            bail!("that jid isn't a group!");
         }
-        info!("Creating new group for jid {}", jid.to_string());
+        info!("Bridging WA group {} to channel {}", jid.to_string(), chan);
         let grp = self.store.store_group(&jid, &chan, vec![], vec![], "*** Group setup in progress, please wait... ***")?;
-        self.request_update_group(jid)?;
+        if request_update {
+            self.request_update_group(jid)?;
+        }
         self.on_groups_changed();
-        self.cb_respond(format!("Group created (id {}).", grp.id));
+        Ok(grp.id)
+    }
+    fn group_associate_handler(&mut self, jid: Jid, chan: String) -> Result<()> {
+        match self.group_associate(jid, chan, true) {
+            Ok(_) => self.cb_respond("Group creation successful.".into()),
+            Err(e) => self.cb_respond(format!("Group creation failed: {}", e))
+        }
         Ok(())
     }
     fn on_groups_changed(&mut self) {
@@ -669,9 +730,11 @@ impl WhatsappManager {
                 debug!("Message ack: {:?}", ack);
             },
             GroupIntroduce { newly_created, meta, .. } => {
-                info!("Got info for group '{}' (jid {})", meta.subject, meta.id.to_string());
-                if newly_created {
-                    info!("Group {} was newly created.", meta.id.to_string());
+                let is_new = if newly_created { " newly created" } else { "" };
+                let jid = meta.id.to_string();
+                info!("Introduced{} group '{}' (jid {})", is_new, meta.subject, jid);
+                if newly_created && self.autocreate.is_some() {
+                    self.group_autocreate_from_intro(meta)?;
                 }
             },
             GroupSubjectChange { group, subject, subject_owner, .. } => {

@@ -32,6 +32,20 @@ pub fn un_normalize_address(addr: &str) -> Option<PduAddress> {
         number: num
     })
 }
+pub fn string_to_irc_chan(inp: &str) -> String {
+    let mut ret = String::new();
+    for ch in inp.chars() {
+        match ch {
+            '_' => ret.push('_'),
+            '-' => ret.push('-'),
+            '#' => ret.push('#'),
+            ' ' => ret.push('-'),
+            x if x.is_ascii_alphanumeric() => ret.extend(x.to_lowercase()),
+            _ => {}
+        }
+    }
+    ret
+}
 pub fn string_to_irc_nick(inp: &str) -> String {
     let mut ret = "S".to_string();
     for ch in inp.chars() {

@@ -204,6 +204,15 @@ impl Sender for InspLink {
     fn store(&mut self) -> &mut Store {
         &mut self.store
     }
+    fn ensure_joined(&mut self, ch: &str) -> Result<()> {
+        if !self.cfg.ensure_joined {
+            return Ok(());
+        }
+        if let Some(admu) = self.admin_uuid() {
+            self.send_sid_line("SVSJOIN", vec![&admu, ch], None)?;
+        }
+        Ok(())
+    }
     fn private_target(&mut self) -> String {
         if let Some(admu) = self.admin_uuid() {
             admu

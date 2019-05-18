@@ -22,6 +22,8 @@ pub struct Config {
     pub client: Option<IrcClientConfig>,
     #[serde(default)]
     pub insp_s2s: Option<InspConfig>,
+    #[serde(default)]
+    pub autocreate_prefix: Option<String>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {
@@ -54,5 +56,7 @@ pub struct InspConfig {
     #[serde(default)]
     pub set_topics: bool,
     #[serde(default)]
-    pub clobber_topics: bool
+    pub clobber_topics: bool,
+    #[serde(default)]
+    pub ensure_joined: bool
 }
