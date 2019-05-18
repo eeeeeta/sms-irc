@@ -5,7 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 chrono = "0.4"
-derive_builder = "0.5"
+derive_builder = "0.7"
 failure = "0.1"
 futures = "0.1"
 humansize = "1.0"
