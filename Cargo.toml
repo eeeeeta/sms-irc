@@ -39,7 +39,7 @@ git = "https://git.theta.eu.org/huawei-modem.git/"
 
 [dependencies.uuid]
 features = ["v4"]
-version = "0.6"
+version = "0.7"
 
 [dependencies.whatsappweb]
 git = "https://git.theta.eu.org/whatsappweb-rs.git/"
