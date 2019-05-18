@@ -38,7 +38,7 @@ pub struct MediaResult {
 }
 impl MediaInfo {
     fn run(&mut self) -> Result<String> {
-        let uu = Uuid::new_v4().simple().to_string();
+        let uu = Uuid::new_v4().to_simple().to_string();
         let mime_ext = get_mime_extensions_str(&self.fi.mime)
             .unwrap_or(&[])
             .get(0)
