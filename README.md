@@ -1,6 +1,8 @@
 # sms-irc
 
-![GNU AGPLv3 licensed](https://www.gnu.org/graphics/agplv3-155x51.png)
+[![GNU AGPLv3 licensed](https://www.gnu.org/graphics/agplv3-155x51.png)](https://www.gnu.org/licenses/agpl-3.0.en.html)
+[![GitHub stars](https://img.shields.io/github/stars/eeeeeta/sms-irc.svg?style=social)](https://github.com/eeeeeta/sms-irc)
+![Maintenance](https://img.shields.io/maintenance/yes/2019.svg)
 
 A WhatsApp Web and SMS bridge for [internet relay chat (IRC)](https://en.wikipedia.org/wiki/Internet_Relay_Chat). (beta!)
 
