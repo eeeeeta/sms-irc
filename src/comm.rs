@@ -11,11 +11,11 @@ use whatsappweb::connection::UserData as WaUserData;
 use whatsappweb::connection::PersistentSession as WaPersistentSession;
 use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
 use whatsappweb::message::ChatMessage as WaMessage;
-use config::Config;
-use store::Store;
+use crate::config::Config;
+use crate::store::Store;
 use tokio_core::reactor::Handle;
 use qrcode::QrCode;
-use whatsapp_media::MediaResult;
+use crate::whatsapp_media::MediaResult;
 
 pub enum ModemCommand {
     DoCmgl,

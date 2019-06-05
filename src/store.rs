@@ -3,15 +3,15 @@
 use diesel::PgConnection;
 use r2d2_diesel::ConnectionManager;
 use r2d2::Pool;
-use config::Config;
+use crate::config::Config;
 use std::sync::Arc;
 use huawei_modem::pdu::PduAddress;
 use diesel::prelude::*;
 use serde_json;
 use whatsappweb::connection::PersistentSession;
 use whatsappweb::Jid;
-use util::{self, Result};
-use models::*;
+use crate::util::{self, Result};
+use crate::models::*;
 
 #[derive(Clone)]
 pub struct Store {
@@ -27,7 +27,7 @@ impl Store {
         })
     }
     pub fn store_message(&mut self, addr: &PduAddress, pdu: &[u8], csms_data: Option<i32>) -> Result<Message> {
-        use schema::messages;
+        use crate::schema::messages;
 
         let num = util::normalize_address(addr);
         let nm = NewMessage {
@@ -43,7 +43,7 @@ impl Store {
         Ok(res)
     }
     pub fn store_plain_message(&mut self, addr: &PduAddress, text: &str, group_target: Option<i32>) -> Result<Message> {
-        use schema::messages;
+        use crate::schema::messages;
 
         let num = util::normalize_address(addr);
         let nm = NewPlainMessage {
@@ -59,8 +59,8 @@ impl Store {
         Ok(res)
     }
     pub fn store_wa_persistence(&mut self, p: PersistentSession) -> Result<()> {
-        use schema::wa_persistence;
-        use schema::wa_persistence::dsl::*;
+        use crate::schema::wa_persistence;
+        use crate::schema::wa_persistence::dsl::*;
         
         let pdata = serde_json::to_value(&p)?;
         let pdata = PersistenceData {
@@ -78,7 +78,7 @@ impl Store {
         Ok(())
     }
     pub fn store_group(&mut self, jid: &Jid, channel: &str, participants: Vec<i32>, admins: Vec<i32>, topic: &str) -> Result<Group> {
-        use schema::groups;
+        use crate::schema::groups;
         let jid = jid.to_string();
         let newgrp = NewGroup {
             jid: &jid,
@@ -92,7 +92,7 @@ impl Store {
         Ok(res)
     }
     pub fn update_group(&mut self, j: &Jid, parts: Vec<i32>, adms: Vec<i32>, tpc: &str) -> Result<Group> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let j = j.to_string();
         let conn = self.inner.get()?;
 
@@ -102,7 +102,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_wa_persistence_opt(&mut self) -> Result<Option<PersistentSession>> {
-        use schema::wa_persistence::dsl::*;
+        use crate::schema::wa_persistence::dsl::*;
         let conn = self.inner.get()?;
         let res: Option<PersistenceData> = wa_persistence.filter(rev.eq(0))
             .first(&*conn)
@@ -117,7 +117,7 @@ impl Store {
         Ok(res)
     }
     pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str, wa: bool) -> Result<Recipient> {
-        use schema::recipients;
+        use crate::schema::recipients;
 
         let num = util::normalize_address(addr);
         let nr = NewRecipient {
@@ -134,7 +134,7 @@ impl Store {
         Ok(res)
     }
     pub fn update_recipient_nick(&mut self, addr: &PduAddress, n: &str) -> Result<()> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
@@ -145,7 +145,7 @@ impl Store {
         Ok(())
     }
     pub fn update_recipient_avatar_url(&mut self, addr: &PduAddress, a: Option<String>) -> Result<()> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
@@ -156,7 +156,7 @@ impl Store {
         Ok(())
     }
     pub fn update_recipient_wa(&mut self, addr: &PduAddress, wa: bool) -> Result<()> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
@@ -167,7 +167,7 @@ impl Store {
         Ok(())
     }
     pub fn get_recipient_by_id_opt(&mut self, i: i32) -> Result<Option<Recipient>> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
 
         let res = recipients.filter(id.eq(i))
@@ -176,7 +176,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_recipient_by_nick_opt(&mut self, n: &str) -> Result<Option<Recipient>> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
 
         let res = recipients.filter(nick.eq(n))
@@ -185,7 +185,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_recipient_by_addr_opt(&mut self, addr: &PduAddress) -> Result<Option<Recipient>> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
 
         let num = util::normalize_address(addr);
@@ -195,7 +195,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_all_recipients(&mut self) -> Result<Vec<Recipient>> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
 
         let res = recipients
@@ -203,7 +203,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_all_messages(&mut self) -> Result<Vec<Message>> {
-        use schema::messages::dsl::*;
+        use crate::schema::messages::dsl::*;
         let conn = self.inner.get()?;
 
         let res = messages
@@ -211,7 +211,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_group_by_id(&mut self, gid: i32) -> Result<Group> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let conn = self.inner.get()?;
 
         let res = groups.filter(id.eq(gid))
@@ -219,7 +219,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_all_groups(&mut self) -> Result<Vec<Group>> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let conn = self.inner.get()?;
 
         let res = groups
@@ -227,7 +227,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_group_by_jid_opt(&mut self, j: &Jid) -> Result<Option<Group>> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let j = j.to_string();
         let conn = self.inner.get()?;
 
@@ -237,7 +237,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_group_by_chan_opt(&mut self, c: &str) -> Result<Option<Group>> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let conn = self.inner.get()?;
 
         let res = groups.filter(channel.eq(c))
@@ -246,7 +246,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_groups_for_recipient(&mut self, addr: &PduAddress) -> Result<Vec<Group>> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let r = self.get_recipient_by_addr_opt(addr)?
             .ok_or(format_err!("get_groups_for_recipient couldn't find recipient"))?;
         let conn = self.inner.get()?;
@@ -256,7 +256,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_messages_for_recipient(&mut self, addr: &PduAddress) -> Result<Vec<Message>> {
-        use schema::messages::dsl::*;
+        use crate::schema::messages::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
@@ -265,7 +265,7 @@ impl Store {
         Ok(res)
     }
     pub fn get_all_concatenated(&mut self, num: &str, rf: i32) -> Result<Vec<Message>> {
-        use schema::messages::dsl::*;
+        use crate::schema::messages::dsl::*;
         let conn = self.inner.get()?;
 
         let res = messages.filter(csms_data.eq(rf)
@@ -274,7 +274,7 @@ impl Store {
         Ok(res)
     }
     pub fn delete_group_with_id(&mut self, i: i32) -> Result<()> {
-        use schema::groups::dsl::*;
+        use crate::schema::groups::dsl::*;
         let conn = self.inner.get()?;
 
         let rows_affected = ::diesel::delete(groups.filter(id.eq(i)))
@@ -285,7 +285,7 @@ impl Store {
         Ok(())
     }
     pub fn delete_recipient_with_addr(&mut self, addr: &PduAddress) -> Result<()> {
-        use schema::recipients::dsl::*;
+        use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
@@ -297,7 +297,7 @@ impl Store {
         Ok(())
     }
     pub fn delete_message(&mut self, mid: i32) -> Result<()> {
-        use schema::messages::dsl::*;
+        use crate::schema::messages::dsl::*;
         let conn = self.inner.get()?;
 
         let rows_affected = ::diesel::delete(messages.filter(id.eq(mid)))

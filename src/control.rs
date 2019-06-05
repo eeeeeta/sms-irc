@@ -4,7 +4,7 @@
 
 use irc::client::PackedIrcClient;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
-use comm::{ControlBotCommand, ModemCommand, ContactFactoryCommand, InitParameters, WhatsappCommand};
+use crate::comm::{ControlBotCommand, ModemCommand, ContactFactoryCommand, InitParameters, WhatsappCommand};
 use failure::Error;
 use futures::{self, Future, Async, Poll, Stream};
 use futures::future::Either;
@@ -14,10 +14,10 @@ use irc::proto::response::Response;
 use irc::client::data::config::Config as IrcConfig;
 use irc::proto::message::Message;
 use irc::client::ext::ClientExt;
-use util::Result;
-use config::IrcClientConfig;
-use store::Store;
-use control_common::ControlCommon;
+use crate::util::Result;
+use crate::config::IrcClientConfig;
+use crate::store::Store;
+use crate::control_common::ControlCommon;
 
 pub struct ControlBot {
     irc: PackedIrcClient,

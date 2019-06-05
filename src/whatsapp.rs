@@ -14,16 +14,16 @@ use whatsappweb::message::{ChatMessageContent, MessageId, Peer};
 use huawei_modem::pdu::PduAddress;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use std::collections::HashMap;
-use store::Store;
+use crate::store::Store;
 use std::sync::Arc;
-use comm::{WhatsappCommand, ContactFactoryCommand, ControlBotCommand, InitParameters};
-use util::{self, Result};
+use crate::comm::{WhatsappCommand, ContactFactoryCommand, ControlBotCommand, InitParameters};
+use crate::util::{self, Result};
 use image::Luma;
 use qrcode::QrCode;
 use futures::{Future, Async, Poll, Stream};
 use failure::Error;
-use models::Recipient;
-use whatsapp_media::{MediaInfo, MediaResult};
+use crate::models::Recipient;
+use crate::whatsapp_media::{MediaInfo, MediaResult};
 use regex::{Regex, Captures};
 
 struct WhatsappHandler {

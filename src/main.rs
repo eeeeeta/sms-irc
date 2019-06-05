@@ -1,31 +1,9 @@
 #![allow(proc_macro_derive_resolution_fallback)]
 
-extern crate irc;
-extern crate futures;
-extern crate tokio_core;
-extern crate huawei_modem;
 #[macro_use] extern crate diesel;
-extern crate r2d2;
-extern crate r2d2_diesel;
-extern crate serde;
 #[macro_use] extern crate serde_derive;
-extern crate toml;
 #[macro_use] extern crate failure;
 #[macro_use] extern crate log;
-extern crate log4rs;
-extern crate tokio_timer;
-extern crate whatsappweb;
-extern crate serde_json;
-extern crate image;
-extern crate qrcode;
-extern crate tokio_codec;
-extern crate chrono;
-extern crate humansize;
-extern crate uuid;
-extern crate reqwest;
-extern crate mime_guess;
-extern crate tokio_signal;
-extern crate regex;
 #[macro_use] extern crate lazy_static;
 
 mod config;
@@ -46,15 +24,15 @@ mod whatsapp_media;
 mod insp_s2s;
 mod insp_user;
 
-use config::Config;
-use store::Store;
-use modem::ModemManager;
-use control::ControlBot;
-use comm::{ChannelMaker, InitParameters};
+use crate::config::Config;
+use crate::store::Store;
+use crate::modem::ModemManager;
+use crate::control::ControlBot;
+use crate::comm::{ChannelMaker, InitParameters};
 use futures::{Future, Stream};
-use contact_factory::ContactFactory;
+use crate::contact_factory::ContactFactory;
 use futures::sync::mpsc::UnboundedSender;
-use comm::ControlBotCommand;
+use crate::comm::ControlBotCommand;
 use tokio_core::reactor::Core;
 use log4rs::config::{Appender, Logger, Root};
 use log4rs::config::Config as LogConfig;
@@ -62,8 +40,8 @@ use log4rs::append::Append;
 use log4rs::append::console::ConsoleAppender;
 use log::Record;
 use std::fmt;
-use insp_s2s::InspLink;
-use whatsapp::WhatsappManager;
+use crate::insp_s2s::InspLink;
+use crate::whatsapp::WhatsappManager;
 use tokio_signal::unix::{Signal, SIGHUP};
 
 pub struct IrcLogWriter {

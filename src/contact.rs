@@ -2,9 +2,9 @@
 
 use irc::client::PackedIrcClient;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
-use comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, WhatsappCommand, InitParameters};
+use crate::comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, WhatsappCommand, InitParameters};
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
-use store::Store;
+use crate::store::Store;
 use failure::Error;
 use futures::{self, Future, Async, Poll, Stream};
 use futures::future::Either;
@@ -14,11 +14,11 @@ use irc::client::ext::ClientExt;
 use irc::proto::command::Command;
 use irc::proto::response::Response;
 use irc::proto::message::Message;
-use models::Recipient;
-use config::IrcClientConfig;
+use crate::models::Recipient;
+use crate::config::IrcClientConfig;
 use irc::client::data::config::Config as IrcConfig;
-use util::{self, Result};
-use sender_common::Sender;
+use crate::util::{self, Result};
+use crate::sender_common::Sender;
 
 pub struct ContactManager {
     irc: PackedIrcClient,

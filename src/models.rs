@@ -1,4 +1,4 @@
-use schema::{recipients, messages, groups, wa_persistence};
+use crate::schema::{recipients, messages, groups, wa_persistence};
 use serde_json::Value;
 
 #[derive(Queryable)]

@@ -2,10 +2,10 @@
 //!
 //! FIXME: the 'from_nick' parameter is a bit hacky.
 
-use models::Message;
+use crate::models::Message;
 use huawei_modem::pdu::DeliverPdu;
-use store::Store;
-use util::Result;
+use crate::store::Store;
+use crate::util::Result;
 use std::convert::TryFrom;
 
 /// The maximum message size sent over IRC.
@@ -38,7 +38,7 @@ pub trait Sender {
         // this nifty implementation!
         for line in msg.lines() {
             let mut last = 0;
-            let mut iter = line.char_indices().filter_map(|(i, _)| {
+            let iter = line.char_indices().filter_map(|(i, _)| {
                 if i >= last + MESSAGE_MAX_LEN {
                     let part = &line[last..i];
                     last = i;

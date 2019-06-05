@@ -1,9 +1,9 @@
 //! Shared behaviour for contact factories/stores.
 
 use huawei_modem::pdu::PduAddress;
-use models::Recipient;
-use store::Store;
-use util::{self, Result};
+use crate::models::Recipient;
+use crate::store::Store;
+use crate::util::{self, Result};
 
 pub trait ContactManagerManager {
     fn setup_contact_for(&mut self, _: Recipient, _: PduAddress) -> Result<()>;

@@ -3,14 +3,14 @@
 use whatsappweb::message::{MessageId, Peer, FileInfo};
 use whatsappweb::{MediaType, crypto};
 use std::thread;
-use comm::WhatsappCommand;
+use crate::comm::WhatsappCommand;
 use futures::sync::mpsc::UnboundedSender;
 use huawei_modem::pdu::PduAddress;
 use humansize::{FileSize, file_size_opts};
 use reqwest;
 use std::io::prelude::*;
 use std::fs::File;
-use util::Result;
+use crate::util::Result;
 use uuid::Uuid;
 use std::sync::Arc;
 use reqwest::header::USER_AGENT;

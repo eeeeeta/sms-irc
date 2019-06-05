@@ -1,20 +1,20 @@
 //! Manages the creation and maintenance of ContactManagers.
 
-use config::Config;
-use store::Store;
-use comm::{ContactFactoryCommand, ContactManagerCommand, ChannelMaker, InitParameters};
+use crate::config::Config;
+use crate::store::Store;
+use crate::comm::{ContactFactoryCommand, ContactManagerCommand, ChannelMaker, InitParameters};
 use futures::{Future, Async, Poll, Stream};
 use futures::sync::mpsc::UnboundedReceiver;
 use std::collections::{HashMap, HashSet};
 use tokio_core::reactor::Handle;
 use huawei_modem::pdu::PduAddress;
-use contact::ContactManager;
-use util::{self, Result};
-use models::Recipient;
+use crate::contact::ContactManager;
+use crate::util::{self, Result};
+use crate::models::Recipient;
 use tokio_timer::Interval;
 use failure::Error;
-use contact_common::ContactManagerManager;
-use config::IrcClientConfig;
+use crate::contact_common::ContactManagerManager;
+use crate::config::IrcClientConfig;
 
 pub struct ContactFactory {
     rx: UnboundedReceiver<ContactFactoryCommand>,

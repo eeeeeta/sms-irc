@@ -7,18 +7,18 @@ use irc::proto::command::Command;
 use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, self};
 use futures::future::Either;
 use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand};
-use store::Store;
+use crate::comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand};
+use crate::store::Store;
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use std::collections::{HashSet, HashMap};
 use failure::Error;
-use models::Recipient;
-use util::{self, Result};
-use contact_common::ContactManagerManager;
-use sender_common::Sender;
-use control_common::ControlCommon;
-use insp_user::InspUser;
-use config::InspConfig;
+use crate::models::Recipient;
+use crate::util::{self, Result};
+use crate::contact_common::ContactManagerManager;
+use crate::sender_common::Sender;
+use crate::control_common::ControlCommon;
+use crate::insp_user::InspUser;
+use crate::config::InspConfig;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1202";
@@ -326,7 +326,7 @@ impl InspLink {
             },
             "!wa" => {
                 let is_wa = {
-                    let mut ct = self.contacts.get(&addr).unwrap();
+                    let ct = self.contacts.get(&addr).unwrap();
                     ct.wa_mode
                 };
                 let wa_state = !is_wa;

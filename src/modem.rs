@@ -5,16 +5,16 @@ use futures::{self, Future, Stream, Poll, Async, IntoFuture};
 use tokio_core::reactor::Handle;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use huawei_modem::at::AtResponse;
-use comm::{ModemCommand, ContactFactoryCommand, ControlBotCommand, InitParameters};
+use crate::comm::{ModemCommand, ContactFactoryCommand, ControlBotCommand, InitParameters};
 use tokio_timer::{Delay, Interval, Timeout};
 use std::time::{Instant, Duration};
-use store::Store;
+use crate::store::Store;
 use huawei_modem::cmd::sms::SmsMessage;
 use huawei_modem::pdu::{Pdu, PduAddress};
 use huawei_modem::gsm_encoding::GsmMessageData;
 use huawei_modem::errors::HuaweiError;
 use failure::Error;
-use util::Result;
+use crate::util::Result;
 use std::mem;
 
 enum ModemInner {

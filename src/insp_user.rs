@@ -1,6 +1,6 @@
 //! InspIRCd user tracking.
 
-use util::{self, Result};
+use crate::util::{self, Result};
 use huawei_modem::pdu::PduAddress;
 
 #[derive(Debug)]

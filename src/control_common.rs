@@ -1,8 +1,8 @@
 //! Common behaviours for the control bot.
 
 use futures::sync::mpsc::UnboundedSender;
-use comm::{WhatsappCommand, ContactFactoryCommand, ModemCommand};
-use util::Result;
+use crate::comm::{WhatsappCommand, ContactFactoryCommand, ModemCommand};
+use crate::util::Result;
 
 static HELPTEXT: &str = r#"sms-irc help:
 [in a /NOTICE to one of the ghosts]
