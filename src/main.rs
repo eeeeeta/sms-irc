@@ -16,6 +16,7 @@ mod models;
 mod contact;
 mod contact_factory;
 mod contact_common;
+mod admin;
 mod control;
 mod control_common;
 mod sender_common;

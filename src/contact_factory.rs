@@ -44,7 +44,9 @@ impl Future for ContactFactory {
                 LoadRecipients => self.load_recipients()?,
                 MakeContact(addr, wa) => self.make_contact(addr, wa)?,
                 DropContact(addr) => self.drop_contact(addr)?,
-                UpdateAway(addr, away) => self.update_away(addr, away),
+                DropContactByNick(nick) => self.drop_contact_by_nick(nick)?,
+                ForwardCommand(addr, cmd) => self.forward_cmd(&addr, cmd)?,
+                ForwardCommandByNick(nick, cmd) => self.forward_cmd_by_nick(&nick, cmd)?,
                 ProcessAvatars => {
                     // FIXME: implement
                 }
@@ -111,6 +113,27 @@ impl ContactManagerManager for ContactFactory {
     fn store(&mut self) -> &mut Store {
         &mut self.store
     }
+    fn resolve_nick(&self, nick: &str) -> Option<PduAddress> {
+        for (addr, c) in self.contacts.iter() {
+            if c.nick() == nick {
+                return Some(addr.clone());
+            }
+        }
+        None
+    }
+    fn forward_cmd(&mut self, addr: &PduAddress, cmd: ContactManagerCommand) -> Result<()> {
+        if let ContactManagerCommand::UpdateAway(a) = cmd {
+            self.update_away(addr, a);
+            return Ok(());
+        }
+        if let Some(c) = self.contacts.get(addr) {
+            c.add_command(cmd);
+        }
+        else {
+            warn!("Dropped command intended for {}", addr);
+        }
+        Ok(())
+    }
 }
 impl ContactFactory {
     pub fn new(cfg: Config, store: Store, mut cm: ChannelMaker, hdl: Handle) -> Self {
@@ -150,11 +173,12 @@ impl ContactFactory {
         }
         Ok(())
     }
-    fn update_away(&mut self, addr: PduAddress, away: Option<String>) {
-        if let Some(c) = self.contacts.get(&addr) {
+    
+    fn update_away(&mut self, addr: &PduAddress, away: Option<String>) {
+        if let Some(c) = self.contacts.get(addr) {
             c.add_command(ContactManagerCommand::UpdateAway(away.clone()));
         }
-        self.contacts_presence.insert(addr, away);
+        self.contacts_presence.insert(addr.clone(), away);
     }
     fn process_groups(&mut self) -> Result<()> {
         debug!("Processing group updates");

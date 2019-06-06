@@ -721,7 +721,11 @@ impl WhatsappManager {
                         _ => None
                     };
                     debug!("Setting presence for {} to {:?}", num, away);
-                    self.cf_tx.unbounded_send(ContactFactoryCommand::UpdateAway(num, away))
+                    let cmd = ContactFactoryCommand::ForwardCommand(
+                        num,
+                        crate::comm::ContactManagerCommand::UpdateAway(away)
+                        );
+                    self.cf_tx.unbounded_send(cmd)
                         .unwrap();
                 }
             },

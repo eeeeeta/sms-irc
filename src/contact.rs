@@ -2,7 +2,7 @@
 
 use irc::client::PackedIrcClient;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver, self};
-use crate::comm::{ModemCommand, ContactManagerCommand, ContactFactoryCommand, WhatsappCommand, InitParameters};
+use crate::comm::{ModemCommand, ContactManagerCommand, WhatsappCommand, InitParameters};
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use crate::store::Store;
 use failure::Error;
@@ -34,7 +34,6 @@ pub struct ContactManager {
     presence: Option<String>,
     channels: Vec<String>,
     webirc_password: Option<String>,
-    cf_tx: UnboundedSender<ContactFactoryCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
     modem_tx: UnboundedSender<ModemCommand>,
     pub tx: UnboundedSender<ContactManagerCommand>,
@@ -86,6 +85,9 @@ impl ContactManager {
     pub fn add_command(&self, cmd: ContactManagerCommand) {
         self.tx.unbounded_send(cmd)
             .unwrap()
+    }
+    pub fn nick(&self) -> &str {
+        &self.nick
     }
     fn process_groups(&mut self) -> Result<()> {
         if !self.connected {
@@ -160,6 +162,13 @@ impl ContactManager {
             UpdateAway(msg) => {
                 self.presence = msg;
                 self.update_away()?;
+            },
+            ChangeNick(nick) => {
+                self.change_nick(nick)?;
+            },
+            SetWhatsapp(wam) => {
+                self.wa_mode = wam;
+                self.store.update_recipient_wa(&self.addr, self.wa_mode)?;
             }
         }
         Ok(())
@@ -168,36 +177,6 @@ impl ContactManager {
         info!("Contact {} changing nick to {}", self.nick, nick);
         self.store.update_recipient_nick(&self.addr, &nick)?;
         self.irc.0.send(Command::NICK(nick))?;
-        Ok(())
-    }
-    fn process_admin_command(&mut self, mesg: String) -> Result<()> {
-        if mesg.len() < 1 || mesg.chars().nth(0) != Some('!') {
-            return Ok(());
-        }
-        let msg = mesg.split(" ").collect::<Vec<_>>();
-        match msg[0] {
-            "!nick" => {
-                if msg.get(1).is_none() {
-                    self.irc.0.send_notice(&self.admin, "!nick takes an argument.")?;
-                    return Ok(());
-                }
-                self.change_nick(msg[1].into())?;
-                self.irc.0.send_notice(&self.admin, "Done.")?;
-            },
-            "!wa" => {
-                self.wa_mode = !self.wa_mode;
-                let state = if self.wa_mode { "ENABLED" } else { "DISABLED" };
-                self.store.update_recipient_wa(&self.addr, self.wa_mode)?;
-                self.irc.0.send_notice(&self.admin, &format!("WhatsApp mode: {}", state))?;
-            },
-            "!die" => {
-                self.cf_tx.unbounded_send(ContactFactoryCommand::DropContact(self.addr.clone()))
-                    .unwrap();
-            },
-            unrec => {
-                self.irc.0.send_notice(&self.admin, &format!("Unknown command: {}", unrec))?;
-            }
-        }
         Ok(())
     }
     fn initialize_watch(&mut self) -> Result<()> {
@@ -223,23 +202,6 @@ impl ContactManager {
                         if from == self.nick {
                             self.nick = nick;
                         }
-                    }
-                }
-            },
-            Command::NOTICE(target, mesg) => {
-                if let Some(from) = im.prefix {
-                    let from = from.split("!").collect::<Vec<_>>();
-                    trace!("{} got NOTICE from {:?} to {}: {}", self.addr, from, target, mesg);
-                    if from.len() < 1 {
-                        return Ok(());
-                    }
-                    if from[0] != self.admin {
-                        self.irc.0.send_notice(from[0], "You aren't the SMS bridge aministrator, so sending me NOTICEs will do nothing!")?;
-                        return Ok(());
-                    }
-                    if target == self.nick {
-                        debug!("Received contact command: {}", mesg);
-                        self.process_admin_command(mesg)?;
                     }
                 }
             },
@@ -316,7 +278,6 @@ impl ContactManager {
         };
         let (tx, rx) = mpsc::unbounded();
         let modem_tx = p.cm.modem_tx.clone();
-        let cf_tx = p.cm.cf_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
         let admin = p.cfg2.admin_nick.clone();
         let webirc_password = p.cfg2.webirc_password.clone();
@@ -357,7 +318,7 @@ impl ContactManager {
                             admin_is_online: true,
                             presence: None,
                             channels: vec![],
-                            addr, store, modem_tx, tx, rx, admin, nick, cf_tx, wa_tx, webirc_password
+                            addr, store, modem_tx, tx, rx, admin, nick, wa_tx, webirc_password
                         })
                     },
                     Err(e) => {

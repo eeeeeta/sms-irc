@@ -70,8 +70,8 @@ impl ControlCommon for ControlBot {
     fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> {
         &mut self.m_tx
     }
-    fn send_cb_message(&mut self, msg: &str) -> Result<()> {
-        self.irc.0.send_privmsg(&self.chan, msg)?;
+    fn control_response(&mut self, msg: &str) -> Result<()> {
+        self.irc.0.send_notice(&self.admin, msg)?;
         Ok(())
     }
 }
@@ -152,7 +152,7 @@ impl ControlBot {
                 self.irc.0.send_notice(&self.admin, &format!("\x02\x0304{}\x0f", err))?;
             },
             CommandResponse(resp) => {
-                self.irc.0.send_privmsg(&self.chan, &format!("{}: {}", self.admin, resp))?;
+                self.control_response(&resp)?;
             },
             ProcessGroups => self.process_groups()?
         }

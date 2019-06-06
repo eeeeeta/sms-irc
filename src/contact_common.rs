@@ -3,6 +3,7 @@
 use huawei_modem::pdu::PduAddress;
 use crate::models::Recipient;
 use crate::store::Store;
+use crate::comm::ContactManagerCommand;
 use crate::util::{self, Result};
 
 pub trait ContactManagerManager {
@@ -10,6 +11,8 @@ pub trait ContactManagerManager {
     fn remove_contact_for(&mut self, _: &PduAddress) -> Result<()>;
     fn has_contact(&mut self, _: &PduAddress) -> bool;
     fn store(&mut self) -> &mut Store;
+    fn forward_cmd(&mut self, _: &PduAddress, _: ContactManagerCommand) -> Result<()>;
+    fn resolve_nick(&self, _: &str) -> Option<PduAddress>;
     fn setup_recipient(&mut self, recip: Recipient) -> Result<()> {
         let addr = util::un_normalize_address(&recip.phone_number)
             .ok_or(format_err!("invalid num {} in db", recip.phone_number))?;
@@ -38,6 +41,24 @@ pub trait ContactManagerManager {
         info!("Dropping contact {}", addr);
         self.store().delete_recipient_with_addr(&addr)?;
         self.remove_contact_for(&addr)?;
+        Ok(())
+    }
+    fn drop_contact_by_nick(&mut self, nick: String) -> Result<()> {
+        if let Some(a) = self.resolve_nick(&nick) {
+            self.drop_contact(a)?;
+        }
+        else {
+            warn!("Tried to drop nonexistent contact with nick {}", nick);
+        }
+        Ok(())
+    }
+    fn forward_cmd_by_nick(&mut self, nick: &str, cmd: ContactManagerCommand) -> Result<()> {
+        if let Some(a) = self.resolve_nick(nick) {
+            self.forward_cmd(&a, cmd)?;
+        }
+        else {
+            warn!("Could not resolve forwarded command intended for {}", nick);
+        }
         Ok(())
     }
 }

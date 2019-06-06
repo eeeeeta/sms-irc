@@ -55,13 +55,18 @@ pub enum ContactFactoryCommand {
     ProcessAvatars,
     MakeContact(PduAddress, bool),
     DropContact(PduAddress),
+    // FIXME: these `ByNick` variants are dumb and only exist to serve the control bot
+    DropContactByNick(String),
     LoadRecipients,
-    UpdateAway(PduAddress, Option<String>)
+    ForwardCommand(PduAddress, ContactManagerCommand),
+    ForwardCommandByNick(String, ContactManagerCommand)
 }
 pub enum ContactManagerCommand {
     ProcessMessages,
     ProcessGroups,
-    UpdateAway(Option<String>)
+    UpdateAway(Option<String>),
+    ChangeNick(String),
+    SetWhatsapp(bool)
 }
 pub enum ControlBotCommand {
     Log(String),

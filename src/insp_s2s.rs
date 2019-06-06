@@ -7,7 +7,7 @@ use irc::proto::command::Command;
 use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, self};
 use futures::future::Either;
 use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand};
+use crate::comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand, ContactManagerCommand};
 use crate::store::Store;
 use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use std::collections::{HashSet, HashMap};
@@ -19,6 +19,7 @@ use crate::sender_common::Sender;
 use crate::control_common::ControlCommon;
 use crate::insp_user::InspUser;
 use crate::config::InspConfig;
+use crate::admin::InspCommand;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 pub static INSP_PROTOCOL_CAPAB: &str = "PROTOCOL=1202";
@@ -129,6 +130,41 @@ impl ContactManagerManager for InspLink {
     fn store(&mut self) -> &mut Store {
         &mut self.store
     }
+    fn resolve_nick(&self, nick: &str) -> Option<PduAddress> {
+        for (uuid, user) in self.users.iter() {
+            if user.nick == nick {
+                if let Some(pdua) = self.contacts_uuid_pdua.get(uuid) {
+                    return Some(pdua.clone());
+                }
+            }
+        }
+        None
+    }
+    fn forward_cmd(&mut self, a: &PduAddress, cmd: ContactManagerCommand) -> Result<()> {
+        if let Some(ct) = self.contacts.get_mut(&a) {
+            match cmd {
+                ContactManagerCommand::UpdateAway(text) => {
+                    self.outbox.push(Message::new(Some(&ct.uuid), "AWAY", vec![], text.as_ref().map(|x| x as &str))?);
+                },
+                ContactManagerCommand::ChangeNick(st) => {
+                    let u = self.users.get_mut(&ct.uuid).unwrap();
+                    u.nick = st.clone();
+                    let ts = chrono::Utc::now().timestamp().to_string();
+                    self.outbox.push(Message::new(Some(&ct.uuid), "NICK", vec![&st, &ts], None)?);
+                    self.store.update_recipient_nick(&a, &st)?;
+                },
+                ContactManagerCommand::SetWhatsapp(wam) => {
+                    ct.wa_mode = wam;
+                    self.set_wa_state(&a, wam)?;
+                },
+                _ => {}
+            }
+        }
+        else {
+            warn!("Failed to forward command to nonexistent ghost with address {}", a);
+        }
+        Ok(())
+    }
 }
 impl ControlCommon for InspLink {
     fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> {
@@ -140,59 +176,46 @@ impl ControlCommon for InspLink {
     fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> {
         &mut self.m_tx
     }
-    fn send_cb_message(&mut self, msg: &str) -> Result<()> {
-        self.outbox.push(Message::new(Some(&self.control_uuid), "PRIVMSG", vec![&self.cfg.log_chan], Some(msg))?);
+    fn control_response(&mut self, msg: &str) -> Result<()> {
+        if let Some(admu) = self.admin_uuid() {
+            let line = Message::new(Some(&self.control_uuid), "NOTICE", vec![&admu], Some(msg))?;
+            self.send(line);
+        }
+        else {
+            warn!("Control response dropped: {}", msg);
+        }
         Ok(())
     }
-    fn extension_helptext() -> &'static str {
-        r#"[InspIRCd s2s-specific commands]
-- !raw <raw IRC line>: send a line over the wire
-- !uuid <uuid>: query information about a UUID
-- !uunick <nick>: get a UUID for a nick
-"#
-    }
-    fn extension_command(&mut self, msg: Vec<&str>) -> Result<()> {
-        match msg[0] {
-            "!uuid" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!uuid takes an argument.")?;
-                    return Ok(());
-                }
-                let ret = format!("{:#?}", self.users.get(msg[1]));
-                for line in ret.lines() {
-                    self.send_cb_message(line)?;
-                }
-            },
-            "!raw" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!raw takes some arguments.")?;
-                    return Ok(());
-                }
-                let m: Message = match msg[1..].join(" ").parse() {
+    fn process_insp(&mut self, ic: InspCommand) -> Result<bool> {
+        use self::InspCommand::*;
+        match ic {
+            Raw(msg) => {
+                let m: Message = match msg.parse() {
                     Ok(m) => m,
                     Err(e) => {
-                        self.send_cb_message(&format!("parse err: {}", e))?;
-                        return Ok(());
+                        self.control_response(&format!("parse err: {}", e))?;
+                        return Ok(true);
                     }
                 };
                 self.outbox.push(m);
             },
-            "!uunick" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!uunick takes an argument.")?;
-                    return Ok(());
+            QueryUuid(uu) => {
+                let ret = format!("{:#?}", self.users.get(&uu));
+                for line in ret.lines() {
+                    self.control_response(line)?;
                 }
+            },
+            QueryNickUuid(qnu) => {
                 let mut nick = None;
                 for (uuid, user) in self.users.iter() {
-                    if user.nick == msg[1] {
+                    if user.nick == qnu {
                         nick = Some(uuid.clone());
                     }
                 }
-                self.send_cb_message(&format!("result = {:?}", nick))?;
-            },
-            x => self.unrecognised_command(x)?
+                self.control_response(&format!("result = {:?}", nick))?;
+            }
         }
-        Ok(())
+        Ok(true)
     }
 }
 impl Sender for InspLink {
@@ -294,54 +317,6 @@ impl InspLink {
         }
         Ok(())
     }
-    fn process_contact_admin_command(&mut self, addr: PduAddress, mesg: String) -> Result<()> {
-        use chrono::Utc;
-        debug!("processing contact admin command for {}: {}", addr, mesg);
-        // FIXME: this is a bit copypasta-y
-        let uid = self.contacts.get(&addr)
-            .map(|x| x.uuid.clone())
-            .expect("pcac called with invalid uid");
-        let auid = match self.admin_uuid() {
-            Some(x) => x,
-            None => {
-                warn!("pcac() called with no admin_uuid?");
-                return Ok(());
-            }
-        };
-        if mesg.len() < 1 || mesg.chars().nth(0) != Some('!') {
-            return Ok(());
-        }
-        let msg = mesg.split(" ").collect::<Vec<_>>();
-        match msg[0] {
-            "!nick" => {
-                if msg.get(1).is_none() {
-                    self.contact_message(&uid, "NOTICE", &auid, "!nick takes an argument.")?;
-                    return Ok(());
-                }
-                let u = self.users.get_mut(&uid).unwrap();
-                u.nick = msg[1].into();
-                let ts = Utc::now().timestamp().to_string();
-                self.outbox.push(Message::new(Some(&uid), "NICK", vec![&msg[1], &ts], None)?);
-                self.store.update_recipient_nick(&addr, &msg[1])?;
-            },
-            "!wa" => {
-                let is_wa = {
-                    let ct = self.contacts.get(&addr).unwrap();
-                    ct.wa_mode
-                };
-                let wa_state = !is_wa;
-                self.set_wa_state(&addr, wa_state)?;
-                self.contact_message(&uid, "NOTICE", &auid, &format!("WhatsApp mode: {}", if wa_state { "ENABLED" } else { "DISABLED" }))?;
-            },
-            "!die" => {
-                self.drop_contact(addr)?;
-            },
-            unrec => {
-                self.contact_message(&uid, "NOTICE", &auid, &format!("Unknown command: {}", unrec))?;
-            },
-        }
-        Ok(())
-    }
     fn remove_user(&mut self, uuid: &str, recreate: bool) -> Result<()> {
         debug!("Removing user {} with recreate {}", uuid, recreate);
         let addr = if let Some(pdua) = self.contacts_uuid_pdua.get(uuid) {
@@ -408,7 +383,7 @@ impl InspLink {
                     debug!("Not admin ({:?}), returning", self.admin_uuid());
                     return Ok(());
                 }
-                if target == self.cfg.log_chan {
+                if target == self.control_uuid {
                     self.process_admin_command(msg)?;
                 }
                 else if self.channels.contains(&target) {
@@ -431,15 +406,6 @@ impl InspLink {
                             }
                         }
                     }
-                }
-            },
-            Command::NOTICE(target, msg) => {
-                if Some(prefix) != self.admin_uuid() {
-                    debug!("Not admin ({:?}), returning", self.admin_uuid());
-                    return Ok(());
-                }
-                if let Some(addr) = self.contacts_uuid_pdua.get(&target).map(|x| x.clone()) {
-                    self.process_contact_admin_command(addr, msg)?;
                 }
             },
             Command::ERROR(details) => {
@@ -635,15 +601,13 @@ impl InspLink {
             ProcessGroups => self.process_groups()?,
             MakeContact(a, wa) => self.make_contact(a, wa)?,
             DropContact(a) => self.drop_contact(a)?,
+            DropContactByNick(a) => self.drop_contact_by_nick(a)?,
             LoadRecipients => {
                 // don't need to do anything; recipients
                 // loaded on burst
             },
-            UpdateAway(a, text) => {
-                if let Some(ct) = self.contacts.get(&a) {
-                    self.outbox.push(Message::new(Some(&ct.uuid), "AWAY", vec![], text.as_ref().map(|x| x as &str))?);
-                }
-            },
+            ForwardCommand(a, cmd) => self.forward_cmd(&a, cmd)?,
+            ForwardCommandByNick(a, cmd) => self.forward_cmd_by_nick(&a, cmd)?,
             ProcessAvatars => {
                 // FIXME: implement
                 //
@@ -670,8 +634,7 @@ impl InspLink {
                 }
             },
             CommandResponse(resp) => {
-                let line = Message::new(Some(&self.control_uuid), "PRIVMSG", vec![&self.cfg.log_chan], Some(&format!("{}: {}", self.cfg.admin_nick, resp)))?;
-                self.send(line);
+                self.control_response(&resp)?;
             },
             ProcessGroups => self.process_groups()?,
         }

@@ -1,147 +1,126 @@
 //! Common behaviours for the control bot.
 
 use futures::sync::mpsc::UnboundedSender;
-use crate::comm::{WhatsappCommand, ContactFactoryCommand, ModemCommand};
+use crate::comm::{WhatsappCommand, ContactFactoryCommand, ContactManagerCommand, ModemCommand};
 use crate::util::Result;
-
-static HELPTEXT: &str = r#"sms-irc help:
-[in a /NOTICE to one of the ghosts]
-- !nick <nick>: change nickname
-- !wa: toggle WhatsApp mode on or off
-- !die: remove the ghost from your contact list
-[in this admin room]
-- !csq: check modem signal quality
-- !reg: check modem registration status
-- !sms <num>: start an SMS conversation with a given phone number
-- !wa <num>: start a WhatsApp conversation with a given phone number
-- !wasetup: set up WhatsApp Web integration
-- !walogon: logon to WhatsApp Web using stored credentials
-- !wabridge <jid> <#channel>: bridge the WA group <jid> to an IRC channel <#channel>
-- !walist: list available WA groups
-- !wadel <#channel>: unbridge IRC channel <#channel>
-- !avatar <nick>: show avatar for <nick>
-- !wagetavatar <nick>: update the avatar for <nick>
-- !wagetallavatars: update all WA avatars
-[debug commands]
-- !waupdateall: refresh metadata for all WA groups (primarily for debugging)
-- !modemreinit: reinitialize connection to modem
-- !modempath <path>: TEMPORARILY use the modem at <path>, instead of the configured one.
-"#;
+use crate::admin::{InspCommand, AdminCommand, GhostCommand, GroupCommand, ContactCommand};
+use crate::admin::ModemCommand as AdminModemCommand;
+use crate::admin::WhatsappCommand as AdminWhatsappCommand;
 
 pub trait ControlCommon {
     fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand>;
     fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand>;
     fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand>;
-    fn send_cb_message(&mut self, msg: &str) -> Result<()>;
-    fn extension_helptext() -> &'static str {
-        ""
+    /// Process the InspIRCd-specific command specified.
+    ///
+    /// Returns `true` if the command was processed, or `false` if it wasn't (i.e. we aren't
+    /// actually an InspIRCd link).
+    fn process_insp(&mut self, _ic: InspCommand) -> Result<bool> {
+        Ok(false)
     }
-    fn extension_command(&mut self, msg: Vec<&str>) -> Result<()> {
-        self.unrecognised_command(msg[0])?;
-        Ok(())
-    }
-    fn unrecognised_command(&mut self, unrec: &str) -> Result<()> {
-        self.send_cb_message(&format!("Unknown command: {}", unrec))?;
-        Ok(())
-    }
+    /// Send a response message to the administrator.
+    fn control_response(&mut self, msg: &str) -> Result<()>;
+    /// Process a message sent to the control bot or user.
     fn process_admin_command(&mut self, mesg: String) -> Result<()> {
-        if mesg.len() < 1 || mesg.chars().nth(0) != Some('!') {
+        if mesg.len() < 1 {
             return Ok(());
         }
         let msg = mesg.split(" ").collect::<Vec<_>>();
-        match msg[0] {
-            "!wasetup" => {
-                self.wa_tx().unbounded_send(WhatsappCommand::StartRegistration)
-                    .unwrap();
-            },
-            "!walist" => {
-                self.wa_tx().unbounded_send(WhatsappCommand::GroupList)
-                    .unwrap();
-            },
-            "!walogon" => {
-                self.wa_tx().unbounded_send(WhatsappCommand::LogonIfSaved)
-                    .unwrap();
-            },
-            "!waupdateall" => {
-                self.wa_tx().unbounded_send(WhatsappCommand::GroupUpdateAll)
-                    .unwrap();
-            },
-            "!wadel" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!wadel takes an argument.")?;
-                    return Ok(());
-                }
-                self.wa_tx().unbounded_send(WhatsappCommand::GroupRemove(msg[1].into()))
-                    .unwrap();
-            },
-            "!avatar" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!avatar takes an argument.")?;
-                    return Ok(());
-                }
-                self.wa_tx().unbounded_send(WhatsappCommand::AvatarShow(msg[1].into()))
-                    .unwrap();
-            },
-            "!wagetavatar" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message("!wagetavatar takes an argument.")?;
-                    return Ok(());
-                }
-                self.wa_tx().unbounded_send(WhatsappCommand::AvatarUpdate(msg[1].into()))
-                    .unwrap();
-            },
-            "!wagetallavatars" => {
-                self.wa_tx().unbounded_send(WhatsappCommand::AvatarUpdateAll)
-                    .unwrap();
-            },
-            "!wabridge" => {
-                if msg.get(1).is_none() || msg.get(2).is_none() {
-                    self.send_cb_message("!wabridge takes two arguments.")?;
-                    return Ok(());
-                }
-                let jid = match msg[1].parse() {
-                    Ok(j) => j,
-                    Err(e) => {
-                        self.send_cb_message(&format!("failed to parse jid: {}", e))?;
-                        return Ok(());
+        let ac = AdminCommand::parse(&msg);
+        if ac.is_none() {
+            self.control_response("Invalid command. Try \x02HELP\x0f for a command listing.")?;
+            return Ok(());
+        }
+        // FIXME: currently we just synthesise a response for the user here,
+        // and send some control message. Ideally, we want to send the user's
+        // command over to the target, and have that come back with a response,
+        // so
+        //     (a) we know it actually got done
+        // and (b) it can say something useful, like "nick changed to ..."
+        match ac.unwrap() {
+            AdminCommand::Ghost(nick, gc) => {
+                use self::GhostCommand::*;
+
+                let mut c = None;
+                match gc {
+                    // This bit looks silly, because it is (see above)
+                    ChangeNick(n) => {
+                        c = Some(ContactManagerCommand::ChangeNick(n));
+                    },
+                    SetWhatsapp(n) => {
+                        c = Some(ContactManagerCommand::SetWhatsapp(n));
+                    },
+                    Remove => {
+                        self.cf_tx().unbounded_send(ContactFactoryCommand::DropContactByNick(nick.clone()))
+                            .unwrap();
                     }
+                }
+                if let Some(c) = c {
+                    self.cf_tx().unbounded_send(ContactFactoryCommand::ForwardCommandByNick(nick, c))
+                        .unwrap();
+                }
+                self.control_response("Ghost command executed.")?;
+            },
+            AdminCommand::Modem(mc) => {
+                use self::AdminModemCommand::*;
+
+                let cts = match mc {
+                    GetCsq => ModemCommand::RequestCsq,
+                    GetReg => ModemCommand::RequestReg,
+                    Reinit => ModemCommand::ForceReinit,
+                    TempPath(s) => ModemCommand::UpdatePath(s),
                 };
-                self.wa_tx().unbounded_send(WhatsappCommand::GroupAssociate(jid, msg[2].into()))
+                self.m_tx().unbounded_send(cts)
                     .unwrap();
             },
-            "!csq" => {
-                self.m_tx().unbounded_send(ModemCommand::RequestCsq).unwrap();
+            AdminCommand::Whatsapp(wac) => {
+                use self::AdminWhatsappCommand::*;
+
+                let cts = match wac {
+                    Setup => WhatsappCommand::StartRegistration,
+                    Logon => WhatsappCommand::LogonIfSaved,
+                    ChatList => WhatsappCommand::GroupList,
+                    UpdateAll => WhatsappCommand::GroupUpdateAll
+                };
+                self.wa_tx().unbounded_send(cts)
+                    .unwrap();
             },
-            "!reg" => {
-                self.m_tx().unbounded_send(ModemCommand::RequestReg).unwrap();
+            AdminCommand::Group(gc) => {
+                use self::GroupCommand::*;
+
+                let cts = match gc {
+                    BridgeWhatsapp { jid, chan } => WhatsappCommand::GroupAssociate(jid, chan),
+                    Unbridge(ch) => WhatsappCommand::GroupRemove(ch)
+                };
+                self.wa_tx().unbounded_send(cts)
+                    .unwrap();
             },
-            "!modemreinit" => {
-                self.m_tx().unbounded_send(ModemCommand::ForceReinit).unwrap();
+            AdminCommand::Contact(cc) => {
+                use self::ContactCommand::*;
+
+                let (addr, is_wa) = match cc {
+                    NewSms(a) => (a, false),
+                    NewWhatsapp(a) => (a, true)
+                };
+                self.cf_tx().unbounded_send(ContactFactoryCommand::MakeContact(addr, is_wa))
+                    .unwrap();
+                self.control_response("Contact command executed.")?;
             },
-            "!modempath" => {
-                let arg = msg.get(1).map(|x| x.to_string());
-                self.m_tx().unbounded_send(ModemCommand::UpdatePath(arg)).unwrap();
-            },
-            x @ "!sms" | x @ "!wa" => {
-                if msg.get(1).is_none() {
-                    self.send_cb_message(&format!("{} takes an argument.", x))?;
-                    return Ok(());
+            AdminCommand::Insp(ic) => {
+                if !self.process_insp(ic)? {
+                    self.control_response("Error: InspIRCd link inactive!")?;
                 }
-                let addr = msg[1].parse().unwrap();
-                let is_wa = x == "!wa";
-                self.cf_tx().unbounded_send(ContactFactoryCommand::MakeContact(addr, is_wa)).unwrap();
             },
-            "!help" => {
-                for line in HELPTEXT.lines() {
-                    self.send_cb_message(line)?;
-                }
-                if Self::extension_helptext() != "" {
-                    for line in Self::extension_helptext().lines() {
-                        self.send_cb_message(line)?;
+            AdminCommand::Help(qry) => {
+                if let Some(hp) = crate::admin::help_page(qry.as_ref().map(|x| x as &str)) {
+                    for line in hp.lines() {
+                        self.control_response(line)?;
                     }
                 }
-            },
-            _ => self.extension_command(msg)?
+                else {
+                    self.control_response("No help page found for that topic.")?;
+                }
+            }
         }
         Ok(())
     }
