@@ -370,7 +370,7 @@ impl ModemManager {
             debug!("Sending part {}/{} of message to {}...", i+1, parts, addr);
             let pdu = Pdu::make_simple_message(addr.clone(), part);
             trace!("PDU: {:?}", pdu);
-            futs.push(command_timeout!(self, cmd::sms::send_sms_pdu(&mut modem, &pdu))
+            futs.push(cmd::sms::send_sms_pdu(&mut modem, &pdu)
                       .map_err(|e| e.into()));
         }
         let a1 = addr.clone();
