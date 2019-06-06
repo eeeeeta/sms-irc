@@ -332,12 +332,21 @@ impl WhatsappManager {
         });
         ret.to_string()
     }
+    fn jid_to_nick(&mut self, jid: &Jid) -> Result<Option<String>> {
+        if let Some(num) = jid.phonenumber() {
+            if let Ok(pdua) = num.parse() {
+                return Ok(self.store.get_recipient_by_addr_opt(&pdua)?
+                    .map(|x| x.nick));
+            }
+        }
+        Ok(None)
+    }
     fn on_message(&mut self, msg: Box<WaMessage>) -> Result<()> {
         use whatsappweb::message::{Direction, Peer};
 
         trace!("processing WA message: {:?}", msg);
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
-        let WaMessage { direction, content, id, .. } = msg;
+        let WaMessage { direction, content, id, quoted, .. } = msg;
         debug!("got message from dir {:?}", direction);
         let mut peer = None;
         let mut is_ours = false;
@@ -398,10 +407,44 @@ impl WhatsappManager {
                 det.truncate(128);
                 format!("[\x02\x0304unimplemented\x0f] {}", det)
             },
-            mut x @ ChatMessageContent::Image(..) |
-                mut x @ ChatMessageContent::Video(..) |
-                mut x @ ChatMessageContent::Audio(..) |
-                mut x @ ChatMessageContent::Document(..) => {
+            ChatMessageContent::LiveLocation { lat, long, speed, .. } => {
+                // FIXME: use write!() maybe
+                let spd = if let Some(s) = speed {
+                    format!("travelling at {:.02} m/s - https://google.com/maps?q={},{}", s, lat, long)
+                }
+                else {
+                    format!("broadcasting live location - https://google.com/maps?q={},{}", lat, long)
+                };
+                format!("\x01ACTION is {}\x01", spd)
+            },
+            ChatMessageContent::Location { lat, long, name, .. } => {
+                let place = if let Some(n) = name {
+                    format!("at '{}'", n)
+                }
+                else {
+                    "somewhere".into()
+                };
+                format!("\x01ACTION is {} - https://google.com/maps?q={},{}\x01", place, lat, long)
+            },
+            ChatMessageContent::Redaction { mid } => {
+                // TODO: make this more useful
+                format!("\x01ACTION redacted message ID \x11{}\x11\x01", mid.0)
+            },
+            ChatMessageContent::Contact { display_name, vcard } => {
+                match crate::whatsapp_media::store_contact(&self.media_path, &self.dl_path, vcard) {
+                    Ok(link) => {
+                        format!("\x01ACTION uploaded a contact for '{}' - {}", display_name, link)
+                    },
+                    Err(e) => {
+                        warn!("Failed to save contact card: {}", e);
+                        format!("\x01ACTION uploaded a contact for '{}' (couldn't download)", display_name)
+                    }
+                }
+            },
+            mut x @ ChatMessageContent::Image { .. } |
+                mut x @ ChatMessageContent::Video { .. } |
+                mut x @ ChatMessageContent::Audio { .. } |
+                mut x @ ChatMessageContent::Document { .. } => {
                     let capt = x.take_caption();
                     if let Some(addr) = util::jid_to_address(&from) {
                         self.process_media(id.clone(), peer.clone(), addr, group, x)?;
@@ -419,6 +462,23 @@ impl WhatsappManager {
                     }
                 }
         };
+        if let Some(qm) = quoted {
+            let nick = if group.is_some() {
+                let nick = self.jid_to_nick(&qm.participant)?
+                    .unwrap_or(qm.participant.to_string());
+                format!("<{}> ", nick)
+            }
+            else {
+                String::new()
+            };
+            let mut message = qm.content.quoted_description();
+            if message.len() > 128 {
+                message.truncate(128);
+                message.push_str("…");
+            }
+            let quote = format!("\x0315> \x1d{}{}", nick, message);
+            self.store_message(&from, &quote, group)?;
+        }
         self.store_message(&from, &text, group)?;
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
@@ -445,10 +505,10 @@ impl WhatsappManager {
         use whatsappweb::MediaType;
 
         let (ty, fi, name) = match ct {
-            ChatMessageContent::Image(fi, ..) => (MediaType::Image, fi, None),
-            ChatMessageContent::Video(fi, ..) => (MediaType::Video, fi, None),
-            ChatMessageContent::Audio(fi, ..) => (MediaType::Audio, fi, None),
-            ChatMessageContent::Document(fi, name) => (MediaType::Document, fi, Some(name)),
+            ChatMessageContent::Image { info, .. } => (MediaType::Image, info, None),
+            ChatMessageContent::Video { info, .. } => (MediaType::Video, info, None),
+            ChatMessageContent::Audio { info, .. } => (MediaType::Audio, info, None),
+            ChatMessageContent::Document { info, filename } => (MediaType::Document, info, Some(filename)),
             _ => unreachable!()
         };
         let mi = MediaInfo {

@@ -2045,7 +2045,7 @@ dependencies = [
  "tokio-timer 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "whatsappweb 0.1.0 (git+https://git.theta.eu.org/whatsappweb-rs.git/)",
+ "whatsappweb 0.2.0 (git+https://git.theta.eu.org/whatsappweb-rs.git/)",
 ]
 
 [[package]]
@@ -2603,8 +2603,8 @@ dependencies = [
 
 [[package]]
 name = "whatsappweb"
-version = "0.1.0"
-source = "git+https://git.theta.eu.org/whatsappweb-rs.git/#d710e028a9dec17121ff36098b773281833c0f64"
+version = "0.2.0"
+source = "git+https://git.theta.eu.org/whatsappweb-rs.git/#a6e486a22263f118c33ea649f8f162165b3d79bd"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2980,7 +2980,7 @@ dependencies = [
 "checksum vcpkg 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "def296d3eb3b12371b2c7d0e83bfe1403e4db2d7a0bba324a12b21c4ee13143d"
 "checksum version_check 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "914b1a6776c4c929a602fafd8bc742e06365d4bcbe48c30f9cca5824f70dc9dd"
 "checksum want 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = "797464475f30ddb8830cc529aaaae648d581f99e2036a928877dfde027ddf6b3"
-"checksum whatsappweb 0.1.0 (git+https://git.theta.eu.org/whatsappweb-rs.git/)" = "<none>"
+"checksum whatsappweb 0.2.0 (git+https://git.theta.eu.org/whatsappweb-rs.git/)" = "<none>"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 "checksum winapi 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)" = "f10e386af2b13e47c89e7236a7a14a086791a2b88ebad6df9bf42040195cf770"
 "checksum winapi-build 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2d315eee3b34aca4797b2da6b13ed88266e6d612562a0c46390af8299fc699bc"
