@@ -239,7 +239,7 @@ impl AdminCommand {
     pub fn help() -> &'static str {
        "\x02*** sms-irc help ***\x0f
 The following commands are available. Use \x02HELP\x02 \x1dcommand\x0f to get more information on each subcommand.
-\x02GHOST \x1dnickname subcommand\x0f
+\x02GHOST\x02 \x1dnickname subcommand\x0f
     Manages ghosts (i.e. IRC users that represent a message recipient).
     Here, \x1dnickname\x0f represents the nickname of the ghost you're trying to manage.
     \x1dFor example, \x11GHOST user REMOVE\x11 would remove the ghost named \x11user\x11.\x1d

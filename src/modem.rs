@@ -12,11 +12,22 @@ use crate::store::Store;
 use huawei_modem::cmd::sms::SmsMessage;
 use huawei_modem::pdu::{Pdu, PduAddress};
 use huawei_modem::gsm_encoding::GsmMessageData;
-use huawei_modem::errors::HuaweiError;
 use failure::Error;
 use crate::util::Result;
 use std::mem;
 
+macro_rules! command_timeout {
+    ($self:ident, $fut:expr) => {{
+        let tx = $self.int_tx.clone();
+        let timeout_ms = $self.cmd_timeout_ms;
+        Timeout::new($fut, Duration::from_millis(timeout_ms as _))
+            .map_err(move |_| {
+                tx.unbounded_send(ModemCommand::CommandTimeout)
+                    .unwrap();
+                format_err!("Modem command timeout reached")
+            })
+    }}
+}
 enum ModemInner {
     Uninitialized,
     Disabled,
@@ -28,7 +39,7 @@ enum ModemInner {
     },
 }
 impl ModemInner {
-    fn init_future(path: &str, hdl: &Handle, has_cs: bool, timeout_ms: u32) -> Box<Future<Item = HuaweiModem, Error = Error>> {
+    fn init_future(path: &str, hdl: &Handle, timeout_ms: u32) -> Box<Future<Item = HuaweiModem, Error = Error>> {
         info!("Initializing modem {}", path);
         let modem = HuaweiModem::new_from_path(path, hdl);
         let fut = modem.into_future()
@@ -44,10 +55,6 @@ impl ModemInner {
                     .then(move |res| {
                         if let Err(e) = res {
                             warn!("Failed to set +CNMI: {}", e);
-                            if !has_cs {
-                                error!("+CNMI support is not available, and cmgl_secs is not provided in the config");
-                                return Err(format_err!("no CNMI support, and no cmgl_secs"));
-                            }
                         }
                         Ok(modem)
                     })
@@ -85,14 +92,14 @@ impl ModemInner {
         }
     }
     // return value: whether or not the modem was just freshly reinitialized
-    pub fn poll(&mut self, modem_path: &Option<String>, hdl: &Handle, has_cs: bool, delay_ms: u32, timeout_ms: u32) -> bool {
+    pub fn poll(&mut self, modem_path: &Option<String>, hdl: &Handle, delay_ms: u32, timeout_ms: u32) -> bool {
         use self::ModemInner::*;
 
         loop {
             match mem::replace(self, Uninitialized) {
                 Uninitialized => {
                     if let Some(ref path) = modem_path {
-                        *self = Initializing(Self::init_future(path, hdl, has_cs, timeout_ms));
+                        *self = Initializing(Self::init_future(path, hdl, timeout_ms));
                     }
                     else {
                         info!("Modem is disabled");
@@ -165,7 +172,7 @@ pub struct ModemManager {
     modem_path: Option<String>,
     delay_ms: u32,
     timeout_ms: u32,
-    has_cs: bool,
+    cmd_timeout_ms: u32,
     rx: UnboundedReceiver<ModemCommand>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     int_tx: UnboundedSender<ModemCommand>,
@@ -189,7 +196,8 @@ impl Future for ModemManager {
                 RequestCsq => self.request_csq(),
                 RequestReg => self.request_reg(),
                 ForceReinit => self.reinit_modem(),
-                UpdatePath(p) => self.update_path(p)
+                UpdatePath(p) => self.update_path(p),
+                CommandTimeout => self.command_timeout()
             }
         }
         Ok(Async::NotReady)
@@ -197,7 +205,7 @@ impl Future for ModemManager {
 }
 impl ModemManager {
     fn poll_modem(&mut self) {
-        if self.inner.poll(&self.modem_path, &self.handle, self.has_cs, self.delay_ms, self.timeout_ms) {
+        if self.inner.poll(&self.modem_path, &self.handle, self.delay_ms, self.timeout_ms) {
             self.cmgl();
         }
         if let Err(e) = self.poll_urc_rx() {
@@ -211,6 +219,10 @@ impl ModemManager {
     }
     fn reinit_modem(&mut self) {
         self.inner.report_error(format_err!("Reinitialization requested"), 0);
+        self.poll_modem();
+    }
+    fn command_timeout(&mut self) {
+        self.inner.report_error(format_err!("Command timed out"), 0);
         self.poll_modem();
     }
     fn report_modem_error(&mut self, err: Error) {
@@ -242,36 +254,35 @@ impl ModemManager {
         let cs = p.cfg.cmgl_secs;
         let delay_ms = p.cfg.modem_restart_delay_ms.unwrap_or(5000);
         let timeout_ms = p.cfg.modem_restart_timeout_ms.unwrap_or(30000);
-        let has_cs = cs.is_some();
+        let cmd_timeout_ms = p.cfg.modem_command_timeout_ms.unwrap_or(2000);
         let rx = p.cm.modem_rx.take().unwrap();
         let int_tx = p.cm.modem_tx.clone();
         let cf_tx = p.cm.cf_tx.clone();
         let cb_tx = p.cm.cb_tx.clone();
 
         int_tx.unbounded_send(ModemCommand::DoCmgl).unwrap();
-        if let Some(cs) = cs {
-            let int_tx_timer = p.cm.modem_tx.clone();
-            let timer = Interval::new(Instant::now(), Duration::new(cs as _, 0))
-                .map_err(|e| {
-                    error!("CMGL timer failed: {}", e);
-                    panic!("timer failed!");
-                }).for_each(move |_| {
-                    trace!("CMGL timer triggered.");
-                    int_tx_timer.unbounded_send(ModemCommand::DoCmgl).unwrap();
-                    Ok(())
-                });
-            p.hdl.spawn(timer);
-        }
+        let cs = cs.unwrap_or(30);
+        let int_tx_timer = p.cm.modem_tx.clone();
+        let timer = Interval::new(Instant::now(), Duration::new(cs as _, 0))
+            .map_err(|e| {
+                error!("CMGL timer failed: {}", e);
+                panic!("timer failed!");
+            }).for_each(move |_| {
+                trace!("CMGL timer triggered.");
+                int_tx_timer.unbounded_send(ModemCommand::DoCmgl).unwrap();
+                Ok(())
+            });
+        p.hdl.spawn(timer);
         let store = p.store;
         let inner = ModemInner::Uninitialized;
         Self {
-            rx, store, cf_tx, handle, int_tx, cb_tx, inner, has_cs, modem_path, delay_ms, timeout_ms
+            rx, store, cf_tx, handle, int_tx, cb_tx, inner, modem_path, delay_ms, timeout_ms, cmd_timeout_ms
         }
     }
     fn request_reg(&mut self) {
         let tx = self.cb_tx.clone();
         let mut modem = get_modem!(self, "Getting registration");
-        let fut = cmd::network::get_registration(&mut modem)
+        let fut = command_timeout!(self, cmd::network::get_registration(&mut modem))
             .then(move |res| {
                 match res {
                     Ok(res) => {
@@ -287,7 +298,7 @@ impl ModemManager {
     fn request_csq(&mut self) {
         let tx = self.cb_tx.clone();
         let mut modem = get_modem!(self, "Getting signal quality");
-        let fut = cmd::network::get_signal_quality(&mut modem)
+        let fut = command_timeout!(self, cmd::network::get_signal_quality(&mut modem))
             .then(move |res| {
                 match res {
                     Ok(res) => {
@@ -338,14 +349,14 @@ impl ModemManager {
                 return Ok(());
             }
         };
-        let fut = cmd::sms::del_sms_pdu(&mut modem, DeletionOptions::DeleteReadAndOutgoing)
+        let fut = command_timeout!(self, cmd::sms::del_sms_pdu(&mut modem, DeletionOptions::DeleteReadAndOutgoing))
             .map_err(|e| {
                 warn!("Failed to delete messages: {}", e);
             });
         self.handle.spawn(fut);
         Ok(())
     }
-    fn cmgl_failed(&mut self, e: HuaweiError) {
+    fn cmgl_failed(&mut self, e: Error) {
         self.report_modem_error(format_err!("+CMGL failed: {}", e));
     }
     fn send_message(&mut self, addr: PduAddress, msg: String) {
@@ -359,7 +370,7 @@ impl ModemManager {
             debug!("Sending part {}/{} of message to {}...", i+1, parts, addr);
             let pdu = Pdu::make_simple_message(addr.clone(), part);
             trace!("PDU: {:?}", pdu);
-            futs.push(cmd::sms::send_sms_pdu(&mut modem, &pdu)
+            futs.push(command_timeout!(self, cmd::sms::send_sms_pdu(&mut modem, &pdu))
                       .map_err(|e| e.into()));
         }
         let a1 = addr.clone();
@@ -382,7 +393,7 @@ impl ModemManager {
 
         if let Ok(mut modem) = self.inner.get_modem() {
             let tx = self.int_tx.clone();
-            let fut = cmd::sms::list_sms_pdu(&mut modem, MessageStatus::All)
+            let fut = command_timeout!(self, cmd::sms::list_sms_pdu(&mut modem, MessageStatus::All))
                 .then(move |results| {
                     match results {
                         Ok(results) => {

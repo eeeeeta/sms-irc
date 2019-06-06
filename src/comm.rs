@@ -2,7 +2,6 @@
 
 use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use huawei_modem::cmd::sms::SmsMessage;
-use huawei_modem::errors::HuaweiError;
 use huawei_modem::pdu::PduAddress;
 use whatsappweb::Jid;
 use whatsappweb::GroupMetadata;
@@ -20,12 +19,13 @@ use crate::whatsapp_media::MediaResult;
 pub enum ModemCommand {
     DoCmgl,
     CmglComplete(Vec<SmsMessage>),
-    CmglFailed(HuaweiError),
+    CmglFailed(failure::Error),
     SendMessage(PduAddress, String),
     RequestCsq,
     RequestReg,
     ForceReinit,
-    UpdatePath(Option<String>)
+    UpdatePath(Option<String>),
+    CommandTimeout
 }
 pub enum WhatsappCommand {
     StartRegistration,

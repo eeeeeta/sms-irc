@@ -9,6 +9,8 @@ pub struct Config {
     #[serde(default)]
     pub modem_restart_timeout_ms: Option<u32>,
     #[serde(default)]
+    pub modem_command_timeout_ms: Option<u32>,
+    #[serde(default)]
     pub chan_loglevel: Option<String>,
     #[serde(default)]
     pub stdout_loglevel: Option<String>,
