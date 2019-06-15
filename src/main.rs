@@ -7,6 +7,7 @@
 #[macro_use] extern crate lazy_static;
 
 mod config;
+mod logging;
 mod store;
 mod modem;
 mod comm;
@@ -32,82 +33,49 @@ use crate::control::ControlBot;
 use crate::comm::{ChannelMaker, InitParameters};
 use futures::{Future, Stream};
 use crate::contact_factory::ContactFactory;
-use futures::sync::mpsc::UnboundedSender;
-use crate::comm::ControlBotCommand;
 use tokio_core::reactor::Core;
-use log4rs::config::{Appender, Logger, Root};
-use log4rs::config::Config as LogConfig;
-use log4rs::append::Append;
-use log4rs::append::console::ConsoleAppender;
-use log::Record;
-use std::fmt;
 use crate::insp_s2s::InspLink;
 use crate::whatsapp::WhatsappManager;
 use tokio_signal::unix::{Signal, SIGHUP};
 
-pub struct IrcLogWriter {
-    sender: UnboundedSender<ControlBotCommand>,
-    level: log::LevelFilter
-}
-impl fmt::Debug for IrcLogWriter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "IrcLogWriter {{ /* fields hidden */ }}")
-    }
-}
-impl Append for IrcLogWriter {
-    fn append(&self, rec: &Record) -> Result<(), Box<::std::error::Error + Sync + Send>> {
-        use log::Level::*;
-        if rec.level() > self.level {
-            return Ok(());
-        }
-        let colour = match rec.level() {
-            Error => "04",
-            Warn => "07",
-            Info => "09",
-            Debug => "10",
-            Trace => "11"
-        };
-        self.sender.unbounded_send(
-            ControlBotCommand::Log(format!("[\x0302{}\x0f] \x02\x03{}{}\x0f -- {}", rec.target(), colour, rec.level(), rec.args())))
-            .unwrap();
-        Ok(())
-    }
-    fn flush(&self) {
-    }
-}
-
 fn main() -> Result<(), failure::Error> {
-    eprintln!("[+] smsirc starting -- reading config file");
-    let config_path = ::std::env::var("SMSIRC_CONFIG")
+    eprintln!("[*] sms-irc version {}", env!("CARGO_PKG_VERSION"));
+    eprintln!("[*] an eta project <https://theta.eu.org>\n");
+
+    let config_path = ::std::env::var("SMSIRC_CONFIG");
+    let is_def = config_path.is_ok();
+    let config_path = config_path
         .unwrap_or("config.toml".to_string());
-    eprintln!("[+] config path: {} (set SMSIRC_CONFIG to change)", config_path);
+    eprintln!("[+] Reading configuration file from file '{}'...", config_path);
+    if is_def {
+        eprintln!("[*] (Set the SMSIRC_CONFIG environment variable to change this.)");
+    }
     let config: Config = toml::from_str(&::std::fs::read_to_string(config_path)?)?;
-    let stdout = ConsoleAppender::builder().build();
+
     let mut cm = ChannelMaker::new();
-    eprintln!("[+] initialising better logging system");
-    let cll = config.chan_loglevel.as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
-    let pll = config.stdout_loglevel.as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
-    let ilw = IrcLogWriter { sender: cm.cb_tx.clone(), level: cll };
-    let log_config = LogConfig::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("irc_chan", Box::new(ilw)))
-        .logger(Logger::builder()
-                .appender("irc_chan")
-                .appender("stdout")
-                .additive(false)
-                .build("sms_irc", pll))
-        .build(Root::builder().appender("stdout").build(pll))?;
-    log4rs::init_config(log_config)?;
+
+    eprintln!("[+] Initializing better logging system...");
+    let cll = config.logging.chan_loglevel
+        .as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
+    let sll = config.logging.stdout_loglevel
+        .as_ref().map(|x| x as &str).unwrap_or("info").parse()?;
+    let ign = config.logging.ignore_other_libraries;
+    eprintln!("[*] IRC loglevel: {} | stdout loglevel: {}", cll, sll);
+    let logger = logging::Logger::new(cll, sll, ign, cm.cb_tx.clone());
+    logger.register();
+
+    info!("sms-irc version {}", env!("CARGO_PKG_VERSION"));
     if config.client.is_none() == config.insp_s2s.is_none() {
         error!("Config must contain either a [client] or an [insp_s2s] section (and not both)!");
         panic!("invalid configuration");
     }
-    info!("Connecting to database");
+
+    info!("Connecting to PostgreSQL");
     let store = Store::new(&config)?;
-    info!("Initializing tokio");
+    debug!("Initializing tokio");
     let mut core = Core::new()?;
     let hdl = core.handle();
-    info!("Initializing modem");
+    debug!("Initializing modem");
     let mm = ModemManager::new(InitParameters {
         cfg: &config,
         cfg2: &(),
@@ -128,7 +96,7 @@ fn main() -> Result<(), failure::Error> {
     }).map_err(|e| {
         error!("Signal handler failed: {}", e);
     }));
-    info!("Initializing WhatsApp");
+    debug!("Initializing WhatsApp");
     let wa = WhatsappManager::new(InitParameters {
         cfg: &config,
         cfg2: &(),
@@ -144,7 +112,7 @@ fn main() -> Result<(), failure::Error> {
     }));
     if config.client.is_some() {
         info!("Running in traditional IRC client mode");
-        info!("Initializing control bot");
+        debug!("Initializing control bot");
         let cb = core.run(ControlBot::new(InitParameters {
             cfg: &config,
             cfg2: config.client.as_ref().unwrap(),
@@ -158,7 +126,7 @@ fn main() -> Result<(), failure::Error> {
             error!("ControlBot failed: {}", e);
             panic!("controlbot failed");
         }));
-        info!("Initializing contact factory");
+        debug!("Initializing contact factory");
         let cf = ContactFactory::new(config, store, cm, hdl);
         let _ = core.run(cf.map_err(|e| {
             error!("ContactFactory failed: {}", e);

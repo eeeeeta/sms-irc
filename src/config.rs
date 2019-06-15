@@ -2,17 +2,24 @@
 pub struct Config {
     pub database_url: String,
     #[serde(default)]
-    pub chan_loglevel: Option<String>,
-    #[serde(default)]
-    pub stdout_loglevel: Option<String>,
-    #[serde(default)]
     pub client: Option<IrcClientConfig>,
     #[serde(default)]
     pub insp_s2s: Option<InspConfig>,
     #[serde(default)]
     pub modem: ModemConfig,
     #[serde(default)]
-    pub whatsapp: WhatsappConfig
+    pub whatsapp: WhatsappConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig
+}
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct LoggingConfig {
+    #[serde(default)]
+    pub chan_loglevel: Option<String>,
+    #[serde(default)]
+    pub stdout_loglevel: Option<String>,
+    #[serde(default)]
+    pub ignore_other_libraries: bool
 }
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ModemConfig {
