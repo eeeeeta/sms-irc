@@ -1,0 +1,14 @@
+insp_s2s.sid = "42A"
+insp_s2s.control_nick = "sms-irc"
+insp_s2s.sendpass = "smslink"
+insp_s2s.recvpass = "smslink"
+insp_s2s.server_desc = "sms-irc bridge in Docker Compose"
+insp_s2s.server_name = "sms-irc."
+insp_s2s.log_chan = "#smsirc"
+insp_s2s.hostname = "inspircd"
+insp_s2s.port = 7000
+insp_s2s.set_topics = true
+insp_s2s.clobber_topics = true
+insp_s2s.ensure_joined = true
+whatsapp.media_path = "/data"
+whatsapp.autocreate_prefix = "#wa"

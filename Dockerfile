@@ -2,7 +2,7 @@ FROM archlinux/base:latest AS sms-irc-compiled
 
 # update OS
 RUN pacman -Syu --noconfirm
-RUN pacman -S --needed --noconfirm base-devel
+RUN pacman -S --needed --noconfirm base-devel postgresql-libs
 
 # install Rust: download rustup
 RUN curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y
@@ -27,8 +27,8 @@ RUN /bin/bash -c 'rm -rf src'
 
 # add the actual code
 ADD ./src /sms-irc/src
-# add some dependencies
-RUN pacman -S --noconfirm postgresql-libs
+# add migrations and other stuff
+ADD ./migrations /sms-irc/migrations 
 # build it!
 RUN ~/.cargo/bin/cargo build --release
 
@@ -37,4 +37,5 @@ WORKDIR /sms-irc
 RUN apt-get update && apt-get install -y libssl1.1 ca-certificates libpq5
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=sms-irc-compiled /sms-irc/target/release/sms-irc /sms-irc
+ADD ./docker /sms-irc/docker
 ENTRYPOINT "/sms-irc/sms-irc"

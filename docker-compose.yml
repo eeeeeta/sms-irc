@@ -1,0 +1,22 @@
+version: "3.2"
+services:
+        inspircd:
+                image: "inspircd/inspircd-docker"
+                env_file: "docker/inspircd.env"
+                expose:
+                        - "7000"
+                ports:
+                        - "${SMS_PORT}:6667"
+        sms-irc:
+                image: "eeeeeta/sms-irc"
+                entrypoint: "/sms-irc/docker/compose.sh" 
+                environment:
+                        SMS_ADMIN_NICK:
+                        SMS_DL_PATH:
+                        SMS_DATABASE_URL:
+                volumes:
+                        - type: "mount"
+                          source: "${SMS_ATTACH_PATH}"
+                          target: "/data"
+                depends_on:
+                        - inspircd
