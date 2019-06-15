@@ -5,6 +5,7 @@
 #[macro_use] extern crate failure;
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate diesel_migrations;
 
 mod config;
 mod logging;

@@ -342,7 +342,7 @@ impl WhatsappManager {
         Ok(None)
     }
     fn on_message(&mut self, msg: Box<WaMessage>) -> Result<()> {
-        use whatsappweb::message::{Direction, Peer};
+        use whatsappweb::message::{Direction};
 
         trace!("processing WA message: {:?}", msg);
         let msg = *msg; // otherwise stupid borrowck gets angry, because Box
@@ -433,11 +433,11 @@ impl WhatsappManager {
             ChatMessageContent::Contact { display_name, vcard } => {
                 match crate::whatsapp_media::store_contact(&self.media_path, &self.dl_path, vcard) {
                     Ok(link) => {
-                        format!("\x01ACTION uploaded a contact for '{}' - {}", display_name, link)
+                        format!("\x01ACTION uploaded a contact for '{}' - {}\x01", display_name, link)
                     },
                     Err(e) => {
                         warn!("Failed to save contact card: {}", e);
-                        format!("\x01ACTION uploaded a contact for '{}' (couldn't download)", display_name)
+                        format!("\x01ACTION uploaded a contact for '{}' (couldn't download)\x01", display_name)
                     }
                 }
             },

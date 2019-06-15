@@ -13,6 +13,8 @@ use whatsappweb::Jid;
 use crate::util::{self, Result};
 use crate::models::*;
 
+embed_migrations!();
+
 #[derive(Clone)]
 pub struct Store {
     inner: Arc<Pool<ConnectionManager<PgConnection>>>
@@ -22,6 +24,7 @@ impl Store {
         let manager = ConnectionManager::new(cfg.database_url.clone());
         let pool = Pool::builder()
             .build(manager)?;
+        embedded_migrations::run(&*pool.get()?)?;
         Ok(Self {
             inner: Arc::new(pool)
         })

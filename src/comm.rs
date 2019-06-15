@@ -27,6 +27,8 @@ pub enum ModemCommand {
     UpdatePath(Option<String>),
     CommandTimeout
 }
+// FIXME: clean up dead code wrt avatars
+#[allow(dead_code)]
 pub enum WhatsappCommand {
     StartRegistration,
     LogonIfSaved,
@@ -49,6 +51,7 @@ pub enum WhatsappCommand {
     AvatarShow(String),
     AvatarUpdateAll
 }
+#[allow(dead_code)]
 pub enum ContactFactoryCommand {
     ProcessMessages,
     ProcessGroups,

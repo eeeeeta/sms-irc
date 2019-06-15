@@ -20,11 +20,11 @@ use mime_guess::get_mime_extensions_str;
 pub fn store_contact(path: &str, dl_path: &str, vcard: String) -> Result<String> {
     let uu = Uuid::new_v4().to_simple().to_string();
     let path = format!("{}/{}.vcf", path, uu);
-    let dl_path = format!("{}/{}.vcf", path, uu);
+    let dl_path = format!("{}/{}.vcf", dl_path, uu);
     debug!("Creating file {}", path);
     let mut file = File::create(&path)?;
     file.write_all(&vcard.as_bytes())?;
-    Ok(path)
+    Ok(dl_path)
 }
 
 pub struct MediaInfo {
