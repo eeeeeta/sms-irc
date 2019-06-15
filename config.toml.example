@@ -33,6 +33,8 @@ database_url = "postgresql://smsirc@localhost/smsirc"
 ## /!\ Do NOT run sms-irc on anything other than your own private IRC server!
 
 ## INSPIRCD LINKING METHOD
+##
+## /!\ You MUST change these values from their defaults for sms-irc to run.
 
 [insp_s2s]
 
