@@ -91,7 +91,7 @@ on Docker Hub.
 ### Fancy docker compose method (recommended!)
 
 If you [install Docker Compose](https://docs.docker.com/compose/install/), you can get up and running pretty quickly
-with a pre-configured copy of sms-irc and InspIRCd 3. You'll need to define four environment variables:
+with a pre-configured copy of sms-irc and InspIRCd 3. You'll need to define five environment variables:
 
 - `SMS_DATABASE_URL`: a PostgreSQL database URL to use for the database.
   - This is in the form `postgresql://user[:password]@host/dbname`.
