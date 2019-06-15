@@ -1,29 +1,39 @@
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub database_url: String,
-    pub modem_path: Option<String>,
-    #[serde(default)]
-    pub cmgl_secs: Option<u32>,
-    #[serde(default)]
-    pub modem_restart_delay_ms: Option<u32>,
-    #[serde(default)]
-    pub modem_restart_timeout_ms: Option<u32>,
-    #[serde(default)]
-    pub modem_command_timeout_ms: Option<u32>,
     #[serde(default)]
     pub chan_loglevel: Option<String>,
     #[serde(default)]
     pub stdout_loglevel: Option<String>,
+    #[serde(default)]
+    pub client: Option<IrcClientConfig>,
+    #[serde(default)]
+    pub insp_s2s: Option<InspConfig>,
+    #[serde(default)]
+    pub modem: ModemConfig,
+    #[serde(default)]
+    pub whatsapp: WhatsappConfig
+}
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ModemConfig {
+    pub modem_path: Option<String>,
+    #[serde(default)]
+    pub cmgl_secs: Option<u32>,
+    #[serde(default)]
+    pub restart_delay_ms: Option<u32>,
+    #[serde(default)]
+    pub restart_timeout_ms: Option<u32>,
+    #[serde(default)]
+    pub command_timeout_ms: Option<u32>,
+}
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct WhatsappConfig {
     #[serde(default)]
     pub qr_path: Option<String>,
     #[serde(default)]
     pub dl_path: Option<String>,
     #[serde(default)]
     pub media_path: Option<String>,
-    #[serde(default)]
-    pub client: Option<IrcClientConfig>,
-    #[serde(default)]
-    pub insp_s2s: Option<InspConfig>,
     #[serde(default)]
     pub autocreate_prefix: Option<String>
 }

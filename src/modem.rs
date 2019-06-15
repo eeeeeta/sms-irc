@@ -249,12 +249,12 @@ impl ModemManager {
         Ok(())
     }
     pub fn new<T>(p: InitParameters<T>) -> Self {
-        let modem_path = p.cfg.modem_path.clone();
+        let modem_path = p.cfg.modem.modem_path.clone();
         let handle = p.hdl.clone();
-        let cs = p.cfg.cmgl_secs;
-        let delay_ms = p.cfg.modem_restart_delay_ms.unwrap_or(5000);
-        let timeout_ms = p.cfg.modem_restart_timeout_ms.unwrap_or(30000);
-        let cmd_timeout_ms = p.cfg.modem_command_timeout_ms.unwrap_or(2000);
+        let cs = p.cfg.modem.cmgl_secs;
+        let delay_ms = p.cfg.modem.restart_delay_ms.unwrap_or(5000);
+        let timeout_ms = p.cfg.modem.restart_timeout_ms.unwrap_or(30000);
+        let cmd_timeout_ms = p.cfg.modem.command_timeout_ms.unwrap_or(30000);
         let rx = p.cm.modem_rx.take().unwrap();
         let int_tx = p.cm.modem_tx.clone();
         let cf_tx = p.cm.cf_tx.clone();
