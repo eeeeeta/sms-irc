@@ -1,0 +1,7 @@
+Dockerfile
+.git*
+**/target*
+**/*.rs.bk
+**/config.toml
+**/Rocket.toml
+**/*.swp
