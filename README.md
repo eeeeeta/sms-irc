@@ -122,7 +122,8 @@ After doing that, a swift
 $ docker-compose up
 ```
 
-in the repo directory should automatically configure everything for you!
+in the repo directory should automatically configure everything for you! Simply connect to `SMS_PORT` on your local machine,
+join `#smsirc`, and `/msg sms-irc help` to learn about configuration. (If you want to oper-up, try `/oper oper sms-irc`.)
 
 ### Simple but hard method
 
