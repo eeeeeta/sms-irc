@@ -1,0 +1,147 @@
+##########################
+# sms-irc example config #
+##########################
+
+## This file is TOML formatted. https://github.com/toml-lang/toml
+
+## Read through this file carefully, taking note of the
+## comments next to each configuration option.
+## When you're done, rename it to "config.toml" and start sms-irc.
+
+## Example or default values are given, prefixed by the comment character ('#').
+## To set a config value, remove the # and change the value.
+
+
+## CORE SETTINGS
+
+## database_url: a PostgreSQL database URL to connect to
+## and use as sms-irc's main database.
+## /!\ You MUST set this value for sms-irc to run.
+
+database_url = "postgresql://smsirc@localhost/smsirc"
+
+## CONNECTION METHODS
+
+## sms-irc doesn't run an IRC server of its own; it requires you to do that.
+## It can either bridge in users by creating a new IRC client for each user
+## (which is hacky, and may be subject to server connection limits),
+## or by linking over the InspIRCd server-to-server protocol to a running
+## InspIRCd server (version 2.0 and above).
+## The latter method is recommended, and is indeed the only thing documented
+## and actually tested nowadays.
+##
+## /!\ Do NOT run sms-irc on anything other than your own private IRC server!
+
+## INSPIRCD LINKING METHOD
+
+[insp_s2s]
+
+sid = "42A" # The Server ID to use. This must not conflict with another server's ID.
+## sms-irc creates a "control user" that you can send administration commands to,
+## similar to an IRC service like ChanServ.
+control_nick = "sms-irc" # The nickname to use for this control user.
+## The admin nick below will receive all bridged messages, and can also control
+## the bridge by sending commands to the control nick above.
+admin_nick = "eeeeeta" # The nickname of the user running the bridge.
+sendpass = "abc" # The password to send to InspIRCd.
+recvpass = "def" # The password to receive from InspIRCd.
+server_desc = "sms-irc bridge" # Virtual server description.
+server_name = "sms-irc." # Virtual server hostname.
+## The log_chan specified below will contain all users bridged by sms-irc,
+## as well as being the place where sms-irc dumps its logs.
+log_chan = "#smsirc" # Which channel to use for logging and users.
+hostname = "127.0.0.1" # Hostname of the IRC server to connect to.
+port = 6432 # Port to connect to (this is the LINKING port, not the client port!)
+
+## The following settings may require sms-irc to be U:lined in your server config.
+
+set_topics = false # Bridge WhatsApp group chat subjects to IRC topics?
+clobber_topics = false # Should the bridge overwrite IRC channel topics with its own?
+ensure_joined = false # Force-joins the admin user to channels when messages are sent to them.
+
+## LOGGING SETTINGS
+
+[logging]
+
+## sms-irc, by default, logs debugging and informational status messages
+## to stdout, and to the IRC channel configured later on.
+## The log levels for each logging destination can be specified below.
+## Possible values: off, error, warn, info, debug, trace
+
+stdout_loglevel = "info"
+chan_loglevel = "info"
+
+## By default, logging information from sms-irc and some of its dependencies
+## is shown. To disable this behaviour and only log sms-irc messages, change
+## the below value to 'false'.
+
+ignore_other_libraries = "false"
+
+## MODEM SETTINGS
+
+[modem]
+
+## sms-irc has support for bridging SMS messages to/from IRC, using a connected
+## USB 3G modem that works like a Huawei E3531 or similar.
+##
+## To set this up, point `modem_path` to the serial port of your modem.
+## Other configuration options are available for more advanced tweaking.
+
+# modem_path = "/dev/ttyUSB2"
+
+## `cmgl_secs` controls how often sms-irc polls for new messages.
+## Note that, if your modem supports the AT+CNMI command (most do),
+## you'll receive new messages as soon as they're received.
+
+cmgl_secs = 30
+
+## If the connection to the modem fails, sms-irc will attempt to reconnect
+## every `restart_delay_ms` milliseconds.
+
+restart_delay_ms = 30000
+
+## `restart_timeout_ms` and `command_timeout_ms` specify how long to wait (in milliseconds)
+## before timing out a restart attempt, or the execution of a command.
+
+restart_timeout_ms = 30000
+command_timeout_ms = 30000
+
+## WHATSAPP SETTINGS
+
+[whatsapp]
+
+## WhatsApp support ideally requires you to run a web server somewhere,
+## so that sms-irc can give out links to attachments uploaded by other users,
+## as well as to the QR code that you'll need to scan to log in.
+##
+## The location of the directory in which sms-irc will save attachments
+## is dictated by the `media_path` setting. sms-irc will give out URLs
+## that start with the URL specified in the `dl_path` setting, and you're
+## expected to configure your webserver so that it all works out.
+##
+## For example, given an attachment "cat.png" and the settings below,
+## sms-irc would save the attachment in `/var/www/whatsapp/cat.png`
+## and display a message like 
+##     * eta uploaded an attachment: http://localhost/whatsapp/cat.png
+## on IRC. Hopefully, you'd then configure your webserver so that that link led
+## to the file sms-irc saved.
+##
+## /!\ Do NOT add a slash ('/') to the end of any of the following paths.
+## This is done for you.
+
+# media_path = "/var/www/whatsapp"
+# dl_path = "http://localhost/whatsapp"
+
+## By default, group chats have to be bridged to IRC manually, by using
+## the GROUP command. However, this means that you'll miss out on messages
+## sent to group chats that haven't been bridged yet.
+##
+## If you'd like sms-irc to automatically bridge channels for you,
+## specify an `autocreate_prefix` below, which sms-irc will prefix newly
+## created channels with.
+##
+## For example, getting invited to the "Example" group with the below
+## settings would create a "#wa-example" channel.
+
+# autocreate_prefix = "#wa"
+

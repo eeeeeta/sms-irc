@@ -36,8 +36,6 @@ pub struct ModemConfig {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct WhatsappConfig {
     #[serde(default)]
-    pub qr_path: Option<String>,
-    #[serde(default)]
     pub dl_path: Option<String>,
     #[serde(default)]
     pub media_path: Option<String>,

@@ -87,8 +87,8 @@ impl WhatsappManager {
         let rx = p.cm.wa_rx.take().unwrap();
         let cf_tx = p.cm.cf_tx.clone();
         let cb_tx = p.cm.cb_tx.clone();
-        let qr_path = p.cfg.whatsapp.qr_path.clone().unwrap_or("/tmp/wa_qr.png".into());
         let media_path = p.cfg.whatsapp.media_path.clone().unwrap_or("/tmp/wa_media".into());
+        let qr_path = format!("{}/qr.png", media_path);
         let dl_path = p.cfg.whatsapp.dl_path.clone().unwrap_or("file:///tmp/wa_media".into());
         let autocreate = p.cfg.whatsapp.autocreate_prefix.clone();
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
