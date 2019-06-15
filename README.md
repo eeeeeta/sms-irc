@@ -2,10 +2,13 @@
 
 [![GNU AGPLv3 licensed](https://www.gnu.org/graphics/agplv3-155x51.png)](https://www.gnu.org/licenses/agpl-3.0.en.html)
 [![GitHub stars](https://img.shields.io/github/stars/eeeeeta/sms-irc.svg?style=social)](https://github.com/eeeeeta/sms-irc)
-[![IRC chat @ #sms-irc on freenode](https://img.shields.io/badge/irc-%23sms-irc%20on%20freenode-blue.svg)](https://kiwiirc.com/client/chat.freenode.net/#sms-irc)
+[![IRC chat @ #sms-irc on freenode](https://img.shields.io/badge/irc-%23sms--irc%20on%20freenode-blue.svg)](https://kiwiirc.com/client/chat.freenode.net/#sms-irc)
 ![Maintenance](https://img.shields.io/maintenance/yes/2019.svg)
 
 A WhatsApp Web and SMS bridge for [internet relay chat (IRC)](https://en.wikipedia.org/wiki/Internet_Relay_Chat). (slightly less beta!)
+
+This repo really lives at [git.theta.eu.org](https://git.theta.eu.org/sms-irc.git/), but it's also on GitHub as well.
+PRs/issues more than welcome!
 
 ## What is this?
 
@@ -71,8 +74,8 @@ libraries for PostgreSQL (`pacman -S postgresql-libs` on Arch). Then, it's as si
 $ cargo build --release
 ```
 
-to *build* it. Configuring it takes some more effort - read `config.toml.example` for the gory details, and rename it
-to `config.toml` when done. Then
+to *build* it. Configuring it takes some more effort - read [`config.example.toml`](https://git.theta.eu.org/sms-irc.git/tree/config.toml.example)
+for the gory details, and rename it to `config.toml` when done. Then
 
 ```
 $ cargo run --release
@@ -96,10 +99,30 @@ with a pre-configured copy of sms-irc and InspIRCd 3. You'll need to define four
 - `SMS_ADMIN_NICK`: the nickname you're going to connect as (e.g. `eeeeeta`)
 - `SMS_ATTACH_PATH`: a path to somewhere on your server to store attachments (gets mounted in the container)
 - `SMS_DL_PATH`: a URL fragment for attachments, which will get at the files in `SMS_ATTACH_PATH`
-  - Basically, this is all explained in `config.toml.example`, but if a file is saved as `SMS_ATTACH_PATH/file.txt`,
+  - Basically, this is all explained in [`config.example.toml`](https://git.theta.eu.org/sms-irc.git/tree/config.toml.example),
+    but if a file is saved as `SMS_ATTACH_PATH/file.txt`,
     sms-irc expects to hand out URLs like `SMS_DL_PATH/file.txt` to IRC clients, and it's your job to make some web server
     make that all happen.
   - For local use, you might want to just use a `file://` URI pointing at your `SMS_ATTACH_PATH`.
+- `SMS_PORT`: which port you want the IRC server to listen on
+
+You might define these, for example, with
+
+```
+$ export SMS_PORT=9000
+$ export SMS_ATTACH_PATH=/path/to/some/folder
+...
+```
+
+For permanent use, you probably want to use some systemd config file or whatever.
+
+After doing that, a swift
+
+```
+$ docker-compose up
+```
+
+in the repo directory should automatically configure everything for you!
 
 ### Simple but hard method
 
