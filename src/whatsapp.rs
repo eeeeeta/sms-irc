@@ -128,76 +128,7 @@ impl WhatsappManager {
                 }
             },
             MediaFinished(r) => self.media_finished(r)?,
-            AvatarUrl(pdua, url) => self.avatar_url(pdua, url)?,
-            AvatarUpdate(nick) => self.avatar_update_by_nick(&nick)?,
-            AvatarShow(nick) => self.avatar_show_by_nick(&nick)?,
-            AvatarUpdateAll => self.avatar_update_all()?
         }
-        Ok(())
-    }
-    fn avatar_show_by_nick(&mut self, nick: &str) -> Result<()> {
-        if let Some(recip) = self.store.get_recipient_by_nick_opt(nick)? {
-            if let Some(au) = recip.avatar_url {
-                self.cb_respond(format!("{}'s avatar: {}", nick, au));
-            }
-            else {
-                self.cb_respond(format!("{} doesn't have an avatar.", nick));
-            }
-        }
-        else {
-            self.cb_respond("Nick not found in database.".into());
-        }
-        Ok(())
-    }
-    fn avatar_update_by_nick(&mut self, nick: &str) -> Result<()> {
-        if let Some(recip) = self.store.get_recipient_by_nick_opt(nick)? {
-            let addr = util::un_normalize_address(&recip.phone_number)
-                .ok_or(format_err!("invalid phone number in db"))?;
-            self.cb_respond(format!("Updating avatar for {}...", addr));
-            self.avatar_update(addr)?;
-        }
-        else {
-            self.cb_respond("Nick not found in database.".into());
-        }
-        Ok(())
-    }
-    fn avatar_update_all(&mut self) -> Result<()> {
-        for recip in self.store.get_all_recipients()? {
-            if recip.whatsapp {
-                let addr = util::un_normalize_address(&recip.phone_number)
-                    .ok_or(format_err!("invalid phone number in db"))?;
-                self.avatar_update(addr)?;
-            }
-        }
-        Ok(())
-    }
-    fn avatar_update(&mut self, pdua: PduAddress) -> Result<()> {
-        match Jid::from_phonenumber(format!("{}", pdua)) {
-            Ok(jid) => {
-                if let Some(ref mut conn) = self.conn {
-                    let tx2 = self.wa_tx.clone();
-                    conn.get_profile_picture(&jid, Box::new(move |pic| {
-                        tx2.unbounded_send(WhatsappCommand::AvatarUrl(pdua.clone(), pic.map(|x| x.to_string())))
-                            .unwrap();
-                    }));
-                }
-            },
-            Err(e) => {
-                warn!("couldn't make jid from phonenumber {}: {}", pdua, e);
-            }
-        }
-        Ok(())
-    }
-    fn avatar_url(&mut self, pdua: PduAddress, url: Option<String>) -> Result<()> {
-        if url.is_some() {
-            info!("Got new avatar for {}", pdua);
-        }
-        else {
-            info!("Removing old avatar for {}", pdua);
-        }
-        self.store.update_recipient_avatar_url(&pdua, url)?;
-        self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessAvatars)
-            .unwrap();
         Ok(())
     }
     fn media_finished(&mut self, r: MediaResult) -> Result<()> {
@@ -813,20 +744,26 @@ impl WhatsappManager {
                 debug!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
                 if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
                     if let Some(inducer) = inducer {
-                        let mut nicks = vec![];
-                        for participant in participants {
-                            if let Some(addr) = util::jid_to_address(&participant) {
-                                let recip = self.get_wa_recipient(&participant, &addr)?;
-                                nicks.push(recip.nick);
-                            }
+                        // Special-case: someone removing themself is just them leaving.
+                        if participants.len() == 1 && participants[0] == inducer {
+                            self.store_message(&inducer, "\x01ACTION left the group\x01", Some(id))?;
                         }
-                        let action = match change {
-                            GroupParticipantsChange::Add => "added",
-                            GroupParticipantsChange::Remove => "removed",
-                            GroupParticipantsChange::Promote => "promoted",
-                            GroupParticipantsChange::Demote => "demoted",
-                        };
-                        self.store_message(&inducer, &format!("\x01ACTION {} user(s): {}\x01", action, nicks.join(", ")), Some(id))?;
+                        else {
+                            let mut nicks = vec![];
+                            for participant in participants {
+                                if let Some(addr) = util::jid_to_address(&participant) {
+                                    let recip = self.get_wa_recipient(&participant, &addr)?;
+                                    nicks.push(recip.nick);
+                                }
+                            }
+                            let action = match change {
+                                GroupParticipantsChange::Add => "added",
+                                GroupParticipantsChange::Remove => "removed",
+                                GroupParticipantsChange::Promote => "promoted",
+                                GroupParticipantsChange::Demote => "demoted",
+                            };
+                            self.store_message(&inducer, &format!("\x01ACTION {}: {}\x01", action, nicks.join(", ")), Some(id))?;
+                        }
                     }
                     self.request_update_group(group)?;
                 }
@@ -846,7 +783,6 @@ impl WhatsappManager {
                     else {
                         info!("{} removed their profile photo.", recip.nick);
                     }
-                    self.avatar_update(addr)?;
                 }
             },
             Battery(level) => {
