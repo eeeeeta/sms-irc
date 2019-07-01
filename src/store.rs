@@ -147,17 +147,6 @@ impl Store {
             .execute(&*conn)?;
         Ok(())
     }
-    pub fn update_recipient_avatar_url(&mut self, addr: &PduAddress, a: Option<String>) -> Result<()> {
-        use crate::schema::recipients::dsl::*;
-        let conn = self.inner.get()?;
-        let num = util::normalize_address(addr);
-
-        ::diesel::update(recipients)
-            .filter(phone_number.eq(num))
-            .set(avatar_url.eq(a))
-            .execute(&*conn)?;
-        Ok(())
-    }
     pub fn update_recipient_wa(&mut self, addr: &PduAddress, wa: bool) -> Result<()> {
         use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
@@ -174,15 +163,6 @@ impl Store {
         let conn = self.inner.get()?;
 
         let res = recipients.filter(id.eq(i))
-            .first(&*conn)
-            .optional()?;
-        Ok(res)
-    }
-    pub fn get_recipient_by_nick_opt(&mut self, n: &str) -> Result<Option<Recipient>> {
-        use crate::schema::recipients::dsl::*;
-        let conn = self.inner.get()?;
-
-        let res = recipients.filter(nick.eq(n))
             .first(&*conn)
             .optional()?;
         Ok(res)
