@@ -46,6 +46,8 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub ack_warn_ms: Option<u64>,
     #[serde(default)]
+    pub ack_warn_pending_ms: Option<u64>,
+    #[serde(default)]
     pub ack_expiry_ms: Option<u64>,
     #[serde(default)]
     pub ack_resend_ms: Option<u64>,

@@ -59,7 +59,8 @@ struct MessageSendStatus {
     sent_ts: DateTime<Utc>,
     content: ChatMessageContent,
     destination: Jid,
-    alerted: bool
+    alerted: bool,
+    alerted_pending: bool,
 }
 pub struct WhatsappManager {
     conn: Option<WhatsappWebConnection<WhatsappHandler>>,
@@ -72,6 +73,7 @@ pub struct WhatsappManager {
     outgoing_messages: HashMap<String, MessageSendStatus>,
     state: WaState,
     ack_warn: u64,
+    ack_warn_pending: u64,
     ack_expiry: u64,
     ack_resend: Option<u64>,
     backlog_start: Option<chrono::NaiveDateTime>,
@@ -108,6 +110,7 @@ impl WhatsappManager {
         let autocreate = p.cfg.whatsapp.autocreate_prefix.clone();
         let ack_ivl = p.cfg.whatsapp.ack_check_interval.unwrap_or(10);
         let ack_warn_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(5000);
+        let ack_warn_pending_ms = p.cfg.whatsapp.ack_warn_pending_ms.unwrap_or(ack_warn_ms * 2);
         let ack_expiry_ms = p.cfg.whatsapp.ack_expiry_ms.unwrap_or(60000);
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
@@ -133,6 +136,7 @@ impl WhatsappManager {
             connected: false,
             our_jid: None,
             ack_warn: ack_warn_ms,
+            ack_warn_pending: ack_warn_pending_ms,
             ack_expiry: ack_expiry_ms,
             ack_resend: ack_resend_ms,
             wa_tx, backlog_start,
@@ -193,8 +197,6 @@ impl WhatsappManager {
     fn check_acks(&mut self) -> Result<()> {
         trace!("Checking acks");
         let now = Utc::now();
-        /*
-        FIXME: this doesn't actually work, because we don't get "Send" acks yet!
         let mut to_resend = vec![];
         for (mid, mss) in self.outgoing_messages.iter_mut() {
             let delta = now - mss.sent_ts;
@@ -202,7 +204,7 @@ impl WhatsappManager {
             if mss.ack_level.is_none() {
                 if delta_ms >= self.ack_warn && !mss.alerted {
                     warn!("Message {} has been un-acked for {} seconds!", mid, delta.num_seconds());
-                    self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Message ID {} apparently hasn't been sent yet!", mid)))
+                    self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Sending message ID {} seems to have failed!", mid)))
                         .unwrap();
                     mss.alerted = true;
                 }
@@ -210,6 +212,16 @@ impl WhatsappManager {
                     if delta_ms >= rs {
                         to_resend.push(mid.clone());
                     }
+                }
+            }
+            if let Some(MessageAckLevel::PendingSend) = mss.ack_level {
+                if delta_ms >= self.ack_warn_pending && !mss.alerted_pending {
+                    warn!("Message {} has been pending for {} seconds!", mid, delta.num_seconds());
+                    self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Sending message ID {} is still pending. Is WhatsApp running and connected?", mid)))
+                        .unwrap();
+                    self.cb_tx.unbounded_send(ControlBotCommand::CommandResponse("For more information on pending outgoing messages, try the \x02WHATSAPP RECEIPTS\x02 command.".into()))
+                        .unwrap();
+                    mss.alerted_pending = true;
                 }
             }
         }
@@ -220,9 +232,12 @@ impl WhatsappManager {
                 .unwrap();
             self.send_message(mss.content, mss.destination)?;
         }
-        */
         let ack_expiry = self.ack_expiry;
         self.outgoing_messages.retain(|_, m| {
+            if let Some(MessageAckLevel::PendingSend) | None = m.ack_level {
+                // Always retain the failures, so the user knows what happened with them (!)
+                return true;
+            }
             let diff_ms = (now - m.sent_ts).num_milliseconds() as u64;
             diff_ms < ack_expiry
         });
@@ -300,7 +315,8 @@ impl WhatsappManager {
             sent_ts: Utc::now(),
             content,
             destination: jid,
-            alerted: false
+            alerted: false,
+            alerted_pending: false
         };
         let mid = self.conn.as_mut().unwrap()
             .send_message(c, j);
