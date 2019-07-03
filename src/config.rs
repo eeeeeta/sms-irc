@@ -40,7 +40,15 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub media_path: Option<String>,
     #[serde(default)]
-    pub autocreate_prefix: Option<String>
+    pub autocreate_prefix: Option<String>,
+    #[serde(default)]
+    pub ack_check_interval: Option<u64>,
+    #[serde(default)]
+    pub ack_warn_ms: Option<u64>,
+    #[serde(default)]
+    pub ack_expiry_ms: Option<u64>,
+    #[serde(default)]
+    pub ack_resend_ms: Option<u64>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {

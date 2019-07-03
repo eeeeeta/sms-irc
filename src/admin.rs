@@ -126,6 +126,7 @@ pub enum WhatsappCommand {
     Logon,
     ChatList,
     UpdateAll,
+    PrintAcks
 }
 impl WhatsappCommand {
     pub fn help() -> &'static str {
@@ -139,6 +140,8 @@ The following commands are available:
     This command will usually not be required, but is helpful if the bridge appears stuck.
 \x02CHATS\x0f
     List all WhatsApp chats you're currently part of.
+\x02RECEIPTS\x0f \x0307(alias \x02ACKS\x02)\x0f
+    Print delivery reports for recently sent messages.
 \x02REBUILD\x0f
     Refresh group metadata for all WhatsApp groups you're currently in.
     This command will usually not be required, and is mainly useful for debugging.
@@ -151,6 +154,7 @@ The following commands are available:
             ("logon", _) => Some(WhatsappCommand::Logon),
             ("chats", _) => Some(WhatsappCommand::ChatList),
             ("rebuild", _) => Some(WhatsappCommand::UpdateAll),
+            ("receipts", _) | ("acks", _) => Some(WhatsappCommand::PrintAcks),
             _ => None
         }
     }

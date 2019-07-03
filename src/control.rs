@@ -149,7 +149,7 @@ impl ControlBot {
                 }
             },
             ReportFailure(err) => {
-                self.irc.0.send_notice(&self.admin, &format!("\x02\x0304{}\x0f", err))?;
+                self.irc.0.send_privmsg(&self.admin, &format!("{}: \x02\x0304{}\x0f", self.admin, err))?;
             },
             CommandResponse(resp) => {
                 self.control_response(&resp)?;

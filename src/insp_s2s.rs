@@ -626,7 +626,7 @@ impl InspLink {
             },
             ReportFailure(fail) => {
                 if let Some(admu) = self.admin_uuid() {
-                    let line = Message::new(Some(&self.cfg.sid), "NOTICE", vec![&admu], Some(&format!("\x02\x0304{}\x0f", fail)))?;
+                    let line = Message::new(Some(&self.cfg.sid), "PRIVMSG", vec![&admu], Some(&format!("{}: \x02\x0304{}\x0f", self.cfg.admin_nick, fail)))?;
                     self.send(line);
                 }
                 else {

@@ -80,7 +80,8 @@ pub trait ControlCommon {
                     Setup => WhatsappCommand::StartRegistration,
                     Logon => WhatsappCommand::LogonIfSaved,
                     ChatList => WhatsappCommand::GroupList,
-                    UpdateAll => WhatsappCommand::GroupUpdateAll
+                    UpdateAll => WhatsappCommand::GroupUpdateAll,
+                    PrintAcks => WhatsappCommand::PrintAcks
                 };
                 self.wa_tx().unbounded_send(cts)
                     .unwrap();

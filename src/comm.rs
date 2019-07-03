@@ -43,7 +43,9 @@ pub enum WhatsappCommand {
     PersistentChanged(WaPersistentSession),
     Disconnect(WaDisconnectReason),
     Message(bool, Box<WaMessage>),
-    MediaFinished(MediaResult)
+    MediaFinished(MediaResult),
+    CheckAcks,
+    PrintAcks
 }
 #[allow(dead_code)]
 pub enum ContactFactoryCommand {
