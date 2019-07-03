@@ -31,8 +31,24 @@ table! {
 }
 
 table! {
+    wa_msgids (mid) {
+        mid -> Varchar,
+    }
+}
+
+table! {
     wa_persistence (rev) {
         rev -> Int4,
         data -> Json,
     }
 }
+
+joinable!(messages -> groups (group_target));
+
+allow_tables_to_appear_in_same_query!(
+    groups,
+    messages,
+    recipients,
+    wa_msgids,
+    wa_persistence,
+);

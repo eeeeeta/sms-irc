@@ -1,0 +1,3 @@
+CREATE TABLE wa_msgids (
+	mid VARCHAR PRIMARY KEY
+);

@@ -37,6 +37,9 @@ impl log::Log for Logger {
     }
     fn log(&self, rec: &Record) {
         use log::Level::*;
+        if self.ignore_other_libraries && !rec.target().starts_with("sms_irc") {
+            return;
+        }
         if rec.level() <= self.stdout_loglevel {
             println!("[{}] {} -- {}", rec.target(), rec.level(), rec.args());
         }

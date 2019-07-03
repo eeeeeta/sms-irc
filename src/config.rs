@@ -48,7 +48,9 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub ack_expiry_ms: Option<u64>,
     #[serde(default)]
-    pub ack_resend_ms: Option<u64>
+    pub ack_resend_ms: Option<u64>,
+    #[serde(default)]
+    pub backlog_start: Option<chrono::NaiveDateTime>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {

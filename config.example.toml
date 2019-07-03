@@ -77,7 +77,7 @@ chan_loglevel = "info"
 ## is shown. To disable this behaviour and only log sms-irc messages, change
 ## the below value to 'false'.
 
-ignore_other_libraries = "false"
+ignore_other_libraries = false
 
 ## MODEM SETTINGS
 

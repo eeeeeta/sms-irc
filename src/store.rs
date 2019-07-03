@@ -119,6 +119,25 @@ impl Store {
         };
         Ok(res)
     }
+    pub fn is_wa_msgid_stored(&mut self, id: &str) -> Result<bool> {
+        use crate::schema::wa_msgids::dsl::*;
+        let conn = self.inner.get()?;
+        let res: Option<WaMessageId> = wa_msgids.filter(mid.eq(id))
+            .first(&*conn)
+            .optional()?;
+        Ok(res.is_some())
+    }
+    pub fn store_wa_msgid(&mut self, id: String) -> Result<()> {
+        use crate::schema::wa_msgids;
+
+        let new = WaMessageId { mid: id };
+        let conn = self.inner.get()?;
+
+        ::diesel::insert_into(wa_msgids::table)
+            .values(&new)
+            .execute(&*conn)?;
+        Ok(())
+    }
     pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str, wa: bool) -> Result<Recipient> {
         use crate::schema::recipients;
 

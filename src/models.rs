@@ -1,4 +1,4 @@
-use crate::schema::{recipients, messages, groups, wa_persistence};
+use crate::schema::{recipients, messages, groups, wa_persistence, wa_msgids};
 use serde_json::Value;
 
 #[derive(Queryable)]
@@ -40,6 +40,11 @@ pub struct Group {
 pub struct PersistenceData {
     pub rev: i32,
     pub data: Value
+}
+#[derive(Insertable, Queryable, Debug)]
+#[table_name="wa_msgids"]
+pub struct WaMessageId {
+    pub mid: String
 }
 #[derive(Insertable)]
 #[table_name="groups"]
