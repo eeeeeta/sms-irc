@@ -39,6 +39,7 @@ use tokio_core::reactor::Core;
 use crate::insp_s2s::InspLink;
 use crate::whatsapp::WhatsappManager;
 use tokio_signal::unix::{Signal, SIGHUP};
+use std::path::Path;
 
 fn main() -> Result<(), failure::Error> {
     eprintln!("[*] sms-irc version {}", env!("CARGO_PKG_VERSION"));
@@ -46,10 +47,25 @@ fn main() -> Result<(), failure::Error> {
 
     let config_path = ::std::env::var("SMSIRC_CONFIG");
     let is_def = config_path.is_ok();
-    let config_path = config_path
-        .unwrap_or("config.toml".to_string());
+    let config_path = match config_path {
+        Ok(p) => p,
+        _ => {
+            if Path::new("config.toml").exists() {
+                "config.toml".to_string()
+            }
+            else if Path::new("/etc/sms-irc.conf").exists() {
+                "/etc/sms-irc.conf".to_string()
+            }
+            else {
+                eprintln!("[!] *** I can't find a configuration file! ***");
+                eprintln!("[!] Please place one either at ./config.toml or /etc/sms-irc.conf...");
+                eprintln!("[!] ...or set the SMSIRC_CONFIG environment variable to point to one!");
+                panic!("Cannot find a configuration file!");
+            }
+        }
+    };
     eprintln!("[+] Reading configuration file from file '{}'...", config_path);
-    if is_def {
+    if !is_def {
         eprintln!("[*] (Set the SMSIRC_CONFIG environment variable to change this.)");
     }
     let config: Config = toml::from_str(&::std::fs::read_to_string(config_path)?)?;
