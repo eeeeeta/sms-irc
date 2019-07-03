@@ -4,6 +4,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/eeeeeta/sms-irc.svg?style=social)](https://github.com/eeeeeta/sms-irc)
 [![IRC chat @ #sms-irc on freenode](https://img.shields.io/badge/irc-%23sms--irc%20on%20freenode-blue.svg)](https://kiwiirc.com/client/chat.freenode.net/#sms-irc)
 ![Maintenance](https://img.shields.io/maintenance/yes/2019.svg)
+[![AUR: sms-irc-git](https://img.shields.io/badge/AUR-sms--irc--git-informational.svg)](https://aur.archlinux.org/packages/sms-irc-git/)
 
 A WhatsApp Web and SMS bridge for [internet relay chat (IRC)](https://en.wikipedia.org/wiki/Internet_Relay_Chat). (slightly less beta!)
 
@@ -67,6 +68,8 @@ You'll still need to configure Postgres and a web server, though.*
 
 ## How do I set it up?
 
+### Building from source
+
 To build this thing, you need a decently recent stable version of [Rust](https://www.rust-lang.org/), and development
 libraries for PostgreSQL (`pacman -S postgresql-libs` on Arch). Then, it's as simple as
 
@@ -83,12 +86,16 @@ $ cargo run --release
 
 should get you up and running.
 
-## What if I'm lazier than that?
+### Using Arch Linux AUR
+
+You can also install [`sms-irc-git`](https://aur.archlinux.org/packages/sms-irc-git/) from the Arch Linux AUR, and edit the example configuration file at `/etc/sms-irc.conf`.
+
+Run the bridge with `$ sms-irc`; at present, no systemd service file is included.
+
+### Fancy docker compose method (recommended!)
 
 Good news! We have a [Docker](https://www.docker.com/) container for you, as [`eeeeeta/sms-irc`](https://hub.docker.com/r/eeeeeta/sms-irc)
 on Docker Hub.
-
-### Fancy docker compose method (recommended!)
 
 If you [install Docker Compose](https://docs.docker.com/compose/install/), you can get up and running pretty quickly
 with a pre-configured copy of sms-irc and InspIRCd 3. You'll need to define five environment variables:
