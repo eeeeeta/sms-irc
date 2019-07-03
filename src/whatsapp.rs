@@ -193,9 +193,9 @@ impl WhatsappManager {
     fn check_acks(&mut self) -> Result<()> {
         trace!("Checking acks");
         let now = Utc::now();
-        let mut to_resend = vec![];
         /*
         FIXME: this doesn't actually work, because we don't get "Send" acks yet!
+        let mut to_resend = vec![];
         for (mid, mss) in self.outgoing_messages.iter_mut() {
             let delta = now - mss.sent_ts;
             let delta_ms = delta.num_milliseconds() as u64;
