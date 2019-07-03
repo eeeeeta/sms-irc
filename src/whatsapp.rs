@@ -105,7 +105,7 @@ impl WhatsappManager {
         let qr_path = format!("{}/qr.png", media_path);
         let dl_path = p.cfg.whatsapp.dl_path.clone().unwrap_or("file:///tmp/wa_media".into());
         let autocreate = p.cfg.whatsapp.autocreate_prefix.clone();
-        let ack_ivl = p.cfg.whatsapp.ack_check_interval.unwrap_or(10000);
+        let ack_ivl = p.cfg.whatsapp.ack_check_interval.unwrap_or(10);
         let ack_warn_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(5000);
         let ack_expiry_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(60000);
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
