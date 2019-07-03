@@ -177,8 +177,12 @@ impl WhatsappManager {
                 summary.truncate(10);
                 summary.push_str("…");
             }
+            let al: std::borrow::Cow<str> = match mss.ack_level {
+                Some(al) => format!("{:?}", al).into(),
+                None => "undelivered".into()
+            };
             lines.push(format!("- \"\x1d{}\x1d\" to \x02{}\x02 ({}s ago) is \x02{:?}\x02", 
-                               summary, mss.destination.to_string(), delta.num_seconds(), mss.ack_level));
+                               summary, mss.destination.to_string(), delta.num_seconds(), al));
             lines.push(format!("  (message ID \x11{}\x0f)", mid));
         }
         for line in lines {
@@ -215,7 +219,10 @@ impl WhatsappManager {
             self.send_message(mss.content, mss.destination);
         }
         let ack_expiry = self.ack_expiry;
-        self.outgoing_messages.retain(|_, m| (now - m.sent_ts).num_milliseconds() as u64 > ack_expiry);
+        self.outgoing_messages.retain(|_, m| {
+            let diff_ms = (now - m.sent_ts).num_milliseconds() as u64;
+            diff_ms < ack_expiry
+        });
         Ok(())
     }
     fn media_finished(&mut self, r: MediaResult) -> Result<()> {
