@@ -108,7 +108,7 @@ impl WhatsappManager {
         let autocreate = p.cfg.whatsapp.autocreate_prefix.clone();
         let ack_ivl = p.cfg.whatsapp.ack_check_interval.unwrap_or(10);
         let ack_warn_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(5000);
-        let ack_expiry_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(60000);
+        let ack_expiry_ms = p.cfg.whatsapp.ack_expiry_ms.unwrap_or(60000);
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
@@ -194,6 +194,8 @@ impl WhatsappManager {
         trace!("Checking acks");
         let now = Utc::now();
         let mut to_resend = vec![];
+        /*
+        FIXME: this doesn't actually work, because we don't get "Send" acks yet!
         for (mid, mss) in self.outgoing_messages.iter_mut() {
             let delta = now - mss.sent_ts;
             let delta_ms = delta.num_milliseconds() as u64;
@@ -218,6 +220,7 @@ impl WhatsappManager {
                 .unwrap();
             self.send_message(mss.content, mss.destination)?;
         }
+        */
         let ack_expiry = self.ack_expiry;
         self.outgoing_messages.retain(|_, m| {
             let diff_ms = (now - m.sent_ts).num_milliseconds() as u64;
@@ -803,8 +806,14 @@ impl WhatsappManager {
                 self.contacts.insert(ct.jid.clone(), ct);
             },
             ContactDelete(jid) => {
+                // NOTE: I don't see any real reason to ever delete contacts.
+                // They might contain useful names for us to use later, and WA
+                // seems to send contact deletion messages on the regular as
+                // people send stuff, which is stupid.
+                //
+                // Therefore, we just don't.
                 debug!("Contact {} deleted", jid.to_string());
-                self.contacts.remove(&jid);
+                //self.contacts.remove(&jid);
             },
             Chats(cts) => {
                 info!("Received initial chat list");
