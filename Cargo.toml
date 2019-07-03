@@ -42,5 +42,5 @@ git = "https://git.theta.eu.org/huawei-modem.git/"
 features = ["v4"]
 version = "0.7"
 
-[dependencies.whatsappweb]
+[dependencies.whatsappweb-eta]
 git = "https://git.theta.eu.org/whatsappweb-rs.git/"

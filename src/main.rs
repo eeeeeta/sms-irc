@@ -6,6 +6,7 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate diesel_migrations;
+extern crate whatsappweb_eta as whatsappweb;
 
 mod config;
 mod logging;
