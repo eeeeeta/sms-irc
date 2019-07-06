@@ -4,7 +4,7 @@ use tokio_codec::Framed;
 use irc::proto::IrcCodec;
 use irc::proto::message::Message;
 use irc::proto::command::Command;
-use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, self};
+use futures::{Future, Async, Poll, Stream, Sink, self};
 use futures::future::Either;
 use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::comm::{ControlBotCommand, ContactFactoryCommand, InitParameters, WhatsappCommand, ModemCommand, ContactManagerCommand};
@@ -84,16 +84,7 @@ impl Future for InspLink {
                 self.handle_cf_command(cfc)?;
             }
         }
-        for msg in ::std::mem::replace(&mut self.outbox, vec![]) {
-            trace!("--> {:?}", msg);
-            match self.conn.start_send(msg)? {
-                AsyncSink::Ready => {},
-                AsyncSink::NotReady(val) => {
-                    self.outbox.push(val);
-                }
-            }
-        }
-        self.conn.poll_complete()?;
+        sink_outbox!(self, outbox, conn, "");
         Ok(Async::NotReady)
     }
 }

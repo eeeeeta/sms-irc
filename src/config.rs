@@ -6,6 +6,8 @@ pub struct Config {
     #[serde(default)]
     pub insp_s2s: Option<InspConfig>,
     #[serde(default)]
+    pub irc_server: Option<IrcServerConfig>,
+    #[serde(default)]
     pub modem: ModemConfig,
     #[serde(default)]
     pub whatsapp: WhatsappConfig,
@@ -69,6 +71,10 @@ pub struct IrcClientConfig {
     pub irc_password: Option<String>,
     #[serde(default)]
     pub webirc_password: Option<String>
+}
+#[derive(Deserialize, Debug, Clone)]
+pub struct IrcServerConfig {
+    pub listen: String
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct InspConfig {

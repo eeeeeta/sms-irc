@@ -13,6 +13,7 @@ mod logging;
 mod store;
 mod modem;
 mod comm;
+#[macro_use]
 mod util;
 mod schema;
 mod models;
@@ -27,6 +28,9 @@ mod whatsapp;
 mod whatsapp_media;
 mod insp_s2s;
 mod insp_user;
+mod irc_s2c;
+mod irc_s2c_registration;
+mod irc_s2c_v3;
 
 use crate::config::Config;
 use crate::store::Store;
@@ -37,6 +41,7 @@ use futures::{Future, Stream};
 use crate::contact_factory::ContactFactory;
 use tokio_core::reactor::Core;
 use crate::insp_s2s::InspLink;
+use crate::irc_s2c::IrcServer;
 use crate::whatsapp::WhatsappManager;
 use tokio_signal::unix::{Signal, SIGHUP};
 use std::path::Path;
@@ -83,8 +88,12 @@ fn main() -> Result<(), failure::Error> {
     logger.register();
 
     info!("sms-irc version {}", env!("CARGO_PKG_VERSION"));
-    if config.client.is_none() == config.insp_s2s.is_none() {
-        error!("Config must contain either a [client] or an [insp_s2s] section (and not both)!");
+    let configs = (config.client.is_some() as u32)
+        + (config.insp_s2s.is_some() as u32)
+        + (config.irc_server.is_some() as u32);
+
+    if configs != 1 {
+        error!("Config must have EXACTLY ONE [client], [insp_s2s] or [irc_server] section!");
         panic!("invalid configuration");
     }
 
@@ -151,7 +160,7 @@ fn main() -> Result<(), failure::Error> {
             panic!("contactfactory failed");
         }));
     }
-    else {
+    else if config.insp_s2s.is_some() {
         info!("Running in InspIRCd s2s mode");
         let fut = core.run(InspLink::new(InitParameters {
             cfg: &config,
@@ -165,6 +174,22 @@ fn main() -> Result<(), failure::Error> {
 
             error!("InspLink failed: {}", e);
             panic!("link failed");
+        }));
+    }
+    else if config.irc_server.is_some() {
+        info!("Running in IRC server mode");
+        let fut = IrcServer::new(InitParameters {
+            cfg: &config,
+            cfg2: config.irc_server.as_ref().unwrap(),
+            store: store.clone(),
+            cm: &mut cm,
+            hdl: &hdl
+        })?;
+        let _ = core.run(fut.map_err(|e| {
+            // FIXME: restartability
+
+            error!("IrcServer failed: {}", e);
+            panic!("server failed");
         }));
     }
     Ok(())

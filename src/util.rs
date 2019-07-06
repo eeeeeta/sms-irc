@@ -5,6 +5,24 @@ use whatsappweb::Jid;
 
 pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 
+#[macro_export]
+macro_rules! sink_outbox {
+    ($self:ident, $outbox_field:ident, $conn_field:ident, $trace_info:expr) => {
+        for msg in ::std::mem::replace(&mut $self.$outbox_field, vec![]) {
+            // FIXME: this logs `msg` twice if we get a `NotReady` for whatever reason.
+            trace!("-->{} {:?}", $trace_info, msg);
+            match $self.$conn_field.start_send(msg)? {
+                ::futures::AsyncSink::Ready => {
+                },
+                ::futures::AsyncSink::NotReady(v) => {
+                    $self.$outbox_field.push(v);
+                }
+            }
+        }
+        $self.$conn_field.poll_complete()?;
+    }
+}
+
 pub fn jid_to_address(jid: &Jid) -> Option<PduAddress> {
     if let Some(pn) = jid.phonenumber() {
         Some(pn.parse().unwrap())
