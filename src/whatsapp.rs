@@ -250,6 +250,7 @@ impl WhatsappManager {
                 self.store.store_plain_message(&r.addr, &ret, r.group)?;
                 self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                     .unwrap();
+                self.store.store_wa_msgid(r.mi.0.clone())?;
                 if let Some(ref mut conn) = self.conn {
                     if let Some(p) = r.peer {
                         conn.send_message_read(r.mi, p);
