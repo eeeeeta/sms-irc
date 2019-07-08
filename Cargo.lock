@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "qrcode"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "checked_int_cast 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2043,7 +2043,7 @@ dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "mime_guess 2.0.0-alpha.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "postgres 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "qrcode 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "qrcode 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "r2d2 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "r2d2-diesel 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2605,7 +2605,7 @@ dependencies = [
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf 2.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf-codegen-pure 2.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "qrcode 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "qrcode 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.36 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.94 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2841,7 +2841,7 @@ dependencies = [
 "checksum protobuf-codegen 2.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d2c6e555166cdb646306f599da020e01548e9f4d6ec2fd39802c6db2347cbd3e"
 "checksum protobuf-codegen-pure 2.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "13a7c75610cc3f41f4d2c1e048d6e4f857361cf26e63b3faf0b3ba1331c94b21"
 "checksum publicsuffix 1.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "5afecba86dcf1e4fd610246f89899d1924fe12e1e89f555eb7c7f710f3c5ad1d"
-"checksum qrcode 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "83861e2b599ea2a911357ca0d8474ce124cf6caf70fc00d4cba96bbac5cf6690"
+"checksum qrcode 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)" = "db39274031636ba52d4758837447a5c8d895cc729f27a8ec183e50a477b625de"
 "checksum quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "7a6e920b65c65f10b2ae65c831a81a073a89edd28c7cce89475bff467ab4167a"
 "checksum quote 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "1eca14c727ad12702eb4b6bfb5a232287dcf8385cb8ca83a3eeaf6519c44c408"
 "checksum quote 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)" = "faf4799c5d274f3868a4aae320a0a182cbd2baee377b378f080e16a23e9d80db"
