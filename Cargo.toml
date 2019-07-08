@@ -3,6 +3,8 @@ authors = ["eeeeeta <eeeeeta@users.noreply.github.com>"]
 name = "sms-irc"
 edition = "2018"
 version = "0.1.0"
+description = "A WhatsApp/SMS to IRC bridge"
+license = "AGPL-3.0"
 
 [dependencies]
 derive_builder = "0.7"
@@ -47,3 +49,10 @@ version = "0.7"
 
 [dependencies.whatsappweb-eta]
 git = "https://git.theta.eu.org/whatsappweb-rs.git/"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+sms-irc = { path = "/usr/bin/sms-irc" }
+
