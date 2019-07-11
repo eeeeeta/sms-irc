@@ -250,7 +250,9 @@ impl WhatsappManager {
                 self.store.store_plain_message(&r.addr, &ret, r.group)?;
                 self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                     .unwrap();
-                self.store.store_wa_msgid(r.mi.0.clone())?;
+                if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
+                    warn!("Failed to store WA msgid {} after media download: {}", r.mi.0, e);
+                }
                 if let Some(ref mut conn) = self.conn {
                     if let Some(p) = r.peer {
                         conn.send_message_read(r.mi, p);
@@ -322,7 +324,9 @@ impl WhatsappManager {
         let mid = self.conn.as_mut().unwrap()
             .send_message(c, j);
         debug!("Send to {}: message ID {}", mss.destination.to_string(), mid.0);
-        self.store.store_wa_msgid(mid.0.clone())?;
+        if let Err(e) = self.store.store_wa_msgid(mid.0.clone()) {
+            warn!("Failed to store outgoing msgid {}: {}", mid.0, e);
+        }
         self.outgoing_messages.insert(mid.0, mss);
         Ok(())
     }
@@ -440,7 +444,9 @@ impl WhatsappManager {
                 }
                 else {
                     info!("Received self-message in a 1-to-1 chat, ignoring...");
-                    self.store.store_wa_msgid(id.0.clone())?;
+                    if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
+                        warn!("Failed to store 1-to-1 msgid {}: {}", id.0, e);
+                    }
                     return Ok(());
                 };
                 (ojid, group) 
@@ -561,7 +567,9 @@ impl WhatsappManager {
             self.store_message(&from, &quote, group)?;
         }
         self.store_message(&from, &text, group)?;
-        self.store.store_wa_msgid(id.0.clone())?;
+        if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
+            warn!("Failed to store received msgid {}: {}", id.0, e);
+        }
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
                 if !is_media && !is_ours {
