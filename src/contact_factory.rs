@@ -130,7 +130,7 @@ impl ContactManagerManager for ContactFactory {
             c.add_command(cmd);
         }
         else {
-            warn!("Dropped command intended for {}", addr);
+            debug!("Dropped command intended for {}", addr);
         }
         Ok(())
     }

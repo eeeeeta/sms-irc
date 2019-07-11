@@ -152,7 +152,7 @@ impl ContactManagerManager for InspLink {
             }
         }
         else {
-            warn!("Failed to forward command to nonexistent ghost with address {}", a);
+            debug!("Failed to forward command to nonexistent ghost with address {}", a);
         }
         Ok(())
     }
