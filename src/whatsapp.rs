@@ -78,6 +78,7 @@ pub struct WhatsappManager {
     ack_resend: Option<u64>,
     backlog_start: Option<chrono::NaiveDateTime>,
     connected: bool,
+    mark_read: bool,
     store: Store,
     qr_path: String,
     media_path: String,
@@ -114,6 +115,7 @@ impl WhatsappManager {
         let ack_expiry_ms = p.cfg.whatsapp.ack_expiry_ms.unwrap_or(60000);
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
+        let mark_read = p.cfg.whatsapp.mark_read;
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
         let wa_tx = Arc::new(wa_tx);
@@ -140,7 +142,7 @@ impl WhatsappManager {
             ack_expiry: ack_expiry_ms,
             ack_resend: ack_resend_ms,
             wa_tx, backlog_start,
-            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate
+            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate, mark_read
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -273,9 +275,11 @@ impl WhatsappManager {
         if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
             warn!("Failed to store WA msgid {} after media download: {}", r.mi.0, e);
         }
-        if let Some(ref mut conn) = self.conn {
-            if let Some(p) = r.peer {
-                conn.send_message_read(r.mi, p);
+        if self.mark_read {
+            if let Some(ref mut conn) = self.conn {
+                if let Some(p) = r.peer {
+                    conn.send_message_read(r.mi, p);
+                }
             }
         }
         Ok(())
@@ -423,6 +427,14 @@ impl WhatsappManager {
         let WaMessage { direction, content, id, quoted, .. } = msg;
         debug!("got message from dir {:?}", direction);
         let mut ts_text = String::new();
+        // If we don't mark things as read, we have to check every 'new' message,
+        // because they might not actually be new.
+        if !self.mark_read || !is_new {
+            if self.store.is_wa_msgid_stored(&id.0)? {
+                debug!("Rejecting backlog message: already in database");
+                return Ok(());
+            }
+        }
         if !is_new {
             debug!("message timestamp: {}", msg.time);
             if let Some(ref bsf) = self.backlog_start {
@@ -579,7 +591,7 @@ impl WhatsappManager {
         }
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
-                if !is_media && !is_ours {
+                if !is_media && !is_ours && self.mark_read {
                     conn.send_message_read(id, p);
                 }
             }
@@ -839,10 +851,11 @@ impl WhatsappManager {
     fn on_contact_change(&mut self, ct: WaContact) -> Result<()> {
         let jid = ct.jid.clone();
         if let Some(addr) = util::jid_to_address(&jid) {
-            let recip = self.get_wa_recipient(&jid)?;
+            let old_notify = self.get_contact_notify_for_jid(&jid).map(|x| x.to_string());
             self.contacts.insert(ct.jid.clone(), ct);
+            let recip = self.get_wa_recipient(&jid)?;
             let notify = self.get_contact_notify_for_jid(&jid).map(|x| x.to_string());
-            if notify != recip.notify {
+            if old_notify != notify {
                 debug!("Notify changed for recipient {}: it's now {:?}", recip.nick, notify);
                 self.store.update_recipient_notify(&addr, notify.as_ref().map(|x| x as &str))?;
             }
