@@ -25,7 +25,8 @@ pub enum ModemCommand {
     RequestReg,
     ForceReinit,
     UpdatePath(Option<String>),
-    CommandTimeout
+    CommandTimeout,
+    MakeContact(PduAddress),
 }
 pub enum WhatsappCommand {
     StartRegistration,
@@ -45,15 +46,17 @@ pub enum WhatsappCommand {
     Message(bool, Box<WaMessage>),
     MediaFinished(MediaResult),
     CheckAcks,
-    PrintAcks
+    PrintAcks,
+    MakeContact(PduAddress),
 }
 #[allow(dead_code)]
 pub enum ContactFactoryCommand {
     ProcessMessages,
     ProcessGroups,
     ProcessAvatars,
-    MakeContact(PduAddress, bool),
+    SetupContact(PduAddress),
     DropContact(PduAddress),
+    QueryContact(PduAddress, i32),
     // FIXME: these `ByNick` variants are dumb and only exist to serve the control bot
     DropContactByNick(String),
     LoadRecipients,

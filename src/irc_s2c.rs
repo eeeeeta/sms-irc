@@ -4,15 +4,14 @@
 
 use tokio_core::net::{TcpListener, Incoming, TcpStream};
 use tokio_codec::Framed;
-use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use irc::proto::IrcCodec;
 use irc::proto::message::Message;
 use irc::proto::command::Command;
-use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, self};
+use futures::{Future, Async, Poll, Stream, Sink, self};
 use failure::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use crate::util::{self, Result};
+use crate::util::Result;
 use crate::irc_s2c_registration::{PendingIrcConnectionWrapper, RegistrationInformation};
 use crate::config::IrcServerConfig;
 use crate::comm::InitParameters;

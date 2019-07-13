@@ -6,6 +6,7 @@ use crate::util::Result;
 use crate::admin::{InspCommand, AdminCommand, GhostCommand, GroupCommand, ContactCommand};
 use crate::admin::ModemCommand as AdminModemCommand;
 use crate::admin::WhatsappCommand as AdminWhatsappCommand;
+use crate::models::Message;
 
 pub trait ControlCommon {
     fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand>;
@@ -98,14 +99,12 @@ pub trait ControlCommon {
             },
             AdminCommand::Contact(cc) => {
                 use self::ContactCommand::*;
-
-                let (addr, is_wa) = match cc {
-                    NewSms(a) => (a, false),
-                    NewWhatsapp(a) => (a, true)
+                let (addr, src) = match cc {
+                    NewSms(a) => (a, Message::SOURCE_SMS),
+                    NewWhatsapp(a) => (a, Message::SOURCE_WA)
                 };
-                self.cf_tx().unbounded_send(ContactFactoryCommand::MakeContact(addr, is_wa))
+                self.cf_tx().unbounded_send(ContactFactoryCommand::QueryContact(addr, src))
                     .unwrap();
-                self.control_response("Contact command executed.")?;
             },
             AdminCommand::Insp(ic) => {
                 if !self.process_insp(ic)? {

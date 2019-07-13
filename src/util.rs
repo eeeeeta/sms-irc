@@ -25,11 +25,22 @@ macro_rules! sink_outbox {
 
 pub fn jid_to_address(jid: &Jid) -> Option<PduAddress> {
     if let Some(pn) = jid.phonenumber() {
-        Some(pn.parse().unwrap())
+        let ret: PduAddress = pn.parse().unwrap();
+        if ret.number.0.len() > 0 {
+            Some(ret)
+        }
+        else {
+            warn!("jid {} converted as 0-length PduAddress", jid.to_string());
+            None
+        }
     }
     else {
         None
     }
+}
+pub fn address_to_jid(addr: &PduAddress) -> Result<Jid> {
+    let ret = Jid::from_phonenumber(addr.to_string())?;
+    Ok(ret)
 }
 pub fn normalize_address(addr: &PduAddress) -> String {
     let ton: u8 = addr.type_addr.into();

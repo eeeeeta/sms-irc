@@ -1,11 +1,10 @@
 //! Decrypting/downloading WA media.
 
 use whatsappweb::message::{MessageId, Peer, FileInfo};
-use whatsappweb::{MediaType, crypto};
+use whatsappweb::{MediaType, crypto, Jid};
 use std::thread;
 use crate::comm::WhatsappCommand;
 use futures::sync::mpsc::UnboundedSender;
-use huawei_modem::pdu::PduAddress;
 use humansize::{FileSize, file_size_opts};
 use reqwest;
 use std::io::prelude::*;
@@ -32,7 +31,7 @@ pub struct MediaInfo {
     pub fi: FileInfo,
     pub mi: MessageId,
     pub peer: Option<Peer>,
-    pub addr: PduAddress,
+    pub from: Jid,
     pub group: Option<i32>,
     pub path: String,
     pub dl_path: String,
@@ -40,7 +39,7 @@ pub struct MediaInfo {
     pub name: Option<String>
 }
 pub struct MediaResult {
-    pub addr: PduAddress,
+    pub from: Jid,
     pub group: Option<i32>,
     pub mi: MessageId,
     pub peer: Option<Peer>,
@@ -96,13 +95,13 @@ impl MediaInfo {
         Ok(ret)
     }
     pub fn start(mut self) {
-        debug!("Starting media download/decryption job for {} / mid {:?}", self.addr, self.mi);
+        debug!("Starting media download/decryption job for {} / mid {:?}", self.from.to_string(), self.mi);
         thread::spawn(move || {
             let ret = self.run();
             let ret = MediaResult {
                 group: self.group,
                 mi: self.mi,
-                addr: self.addr,
+                from: self.from,
                 peer: self.peer,
                 result: ret
             };

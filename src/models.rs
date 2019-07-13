@@ -7,7 +7,8 @@ pub struct Recipient {
     pub phone_number: String,
     pub nick: String,
     pub whatsapp: bool,
-    pub avatar_url: Option<String>
+    pub avatar_url: Option<String>,
+    pub notify: Option<String>,
 }
 #[derive(Insertable)]
 #[table_name="recipients"]
@@ -15,7 +16,8 @@ pub struct NewRecipient<'a> {
     pub phone_number: &'a str,
     pub nick: &'a str,
     pub whatsapp: bool,
-    pub avatar_url: Option<&'a str>
+    pub avatar_url: Option<&'a str>,
+    pub notify: Option<&'a str>
 }
 #[derive(Queryable, Debug)]
 pub struct Message {
@@ -25,6 +27,11 @@ pub struct Message {
     pub csms_data: Option<i32>,
     pub group_target: Option<i32>,
     pub text: Option<String>,
+    pub source: i32,
+}
+impl Message {
+    pub const SOURCE_SMS: i32 = 0;
+    pub const SOURCE_WA: i32 = 1;
 }
 #[derive(Queryable, Debug)]
 pub struct Group {
@@ -61,6 +68,7 @@ pub struct NewMessage<'a> {
     pub phone_number: &'a str,
     pub pdu: &'a [u8],
     pub csms_data: Option<i32>,
+    pub source: i32
 }
 #[derive(Insertable)]
 #[table_name="messages"]
@@ -68,4 +76,5 @@ pub struct NewPlainMessage<'a> {
     pub phone_number: &'a str,
     pub group_target: Option<i32>,
     pub text: &'a str,
+    pub source: i32
 }

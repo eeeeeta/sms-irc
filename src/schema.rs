@@ -17,6 +17,7 @@ table! {
         csms_data -> Nullable<Int4>,
         group_target -> Nullable<Int4>,
         text -> Nullable<Varchar>,
+        source -> Int4,
     }
 }
 
@@ -27,6 +28,7 @@ table! {
         nick -> Varchar,
         whatsapp -> Bool,
         avatar_url -> Nullable<Varchar>,
+        notify -> Nullable<Varchar>,
     }
 }
 

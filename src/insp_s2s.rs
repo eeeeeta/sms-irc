@@ -47,6 +47,8 @@ pub struct InspLink {
     cf_rx: UnboundedReceiver<ContactFactoryCommand>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     cb_rx: UnboundedReceiver<ControlBotCommand>,
+    // Okay, this is a bit silly, but hey, standardization...
+    cb_tx: UnboundedSender<ControlBotCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
     m_tx: UnboundedSender<ModemCommand>,
     // map of UID -> InspUser
@@ -89,6 +91,9 @@ impl Future for InspLink {
     }
 }
 impl ContactManagerManager for InspLink {
+    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> { &mut self.wa_tx }
+    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> { &mut self.m_tx }
+    fn cb_tx(&mut self) -> &mut UnboundedSender<ControlBotCommand> { &mut self.cb_tx }
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
         trace!("setting up contact for recip #{}: {}", recip.id, addr);
         let host = self.host_for_wa(recip.whatsapp);
@@ -158,15 +163,9 @@ impl ContactManagerManager for InspLink {
     }
 }
 impl ControlCommon for InspLink {
-    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> {
-        &mut self.wa_tx
-    }
-    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand> {
-        &mut self.cf_tx
-    }
-    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> {
-        &mut self.m_tx
-    }
+    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand> { &mut self.cf_tx }
+    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> { &mut self.wa_tx }
+    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> { &mut self.m_tx }
     fn control_response(&mut self, msg: &str) -> Result<()> {
         if let Some(admu) = self.admin_uuid() {
             let line = Message::new(Some(&self.control_uuid), "NOTICE", vec![&admu], Some(msg))?;
@@ -264,6 +263,7 @@ impl InspLink {
         let cf_rx = p.cm.cf_rx.take().unwrap();
         let cb_rx = p.cm.cb_rx.take().unwrap();
         let cf_tx = p.cm.cf_tx.clone();
+        let cb_tx = p.cm.cb_tx.clone();
         let wa_tx = p.cm.wa_tx.clone();
         let m_tx = p.cm.modem_tx.clone();
         let (addr, codec) = match Self::_make_addr_and_codec(&cfg) {
@@ -279,7 +279,7 @@ impl InspLink {
                     cfg,
                     control_uuid,
                     next_user_id: 1,
-                    cf_rx, cf_tx, cb_rx, wa_tx, m_tx,
+                    cf_rx, cf_tx, cb_rx, cb_tx, wa_tx, m_tx,
                     users: HashMap::new(),
                     contacts: HashMap::new(),
                     contacts_uuid_pdua: HashMap::new(),
@@ -322,7 +322,7 @@ impl InspLink {
         if let Some(a) = addr {
             if recreate {
                 info!("Contact for {} removed; recreating", a);
-                self.make_contact(a, false)?;
+                self.setup_contact(a)?;
             }
         }
         Ok(())
@@ -590,7 +590,8 @@ impl InspLink {
         match cfc {
             ProcessMessages => self.process_messages()?,
             ProcessGroups => self.process_groups()?,
-            MakeContact(a, wa) => self.make_contact(a, wa)?,
+            SetupContact(a) => self.setup_contact(a)?,
+            QueryContact(a, src) => self.query_contact(a, src)?,
             DropContact(a) => self.drop_contact(a)?,
             DropContactByNick(a) => self.drop_contact_by_nick(a)?,
             LoadRecipients => {
@@ -681,7 +682,8 @@ impl InspLink {
             let addr = util::un_normalize_address(&msg.phone_number)
                 .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
             if !self.has_contact(&addr) {
-                self.make_contact(addr.clone(), msg.text.is_some())?;
+                self.request_contact(addr, msg.source)?;
+                continue;
             }
             let (uuid, is_wa) = {
                 let ct = self.contacts.get(&addr).unwrap();
@@ -735,9 +737,7 @@ impl InspLink {
         let line = self.make_uid_line(&uuid)?;
         self.send(line);
         for recip in self.store.get_all_recipients()? {
-            let addr = util::un_normalize_address(&recip.phone_number)
-               .ok_or(format_err!("invalid phone number in db"))?;
-            self.make_contact(addr, recip.whatsapp)?;
+            self.setup_recipient(recip)?;
         }
         self.send_sid_line("ENDBURST", vec![], None)?;
         Ok(())

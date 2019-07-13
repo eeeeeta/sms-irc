@@ -13,7 +13,7 @@ use huawei_modem::cmd::sms::SmsMessage;
 use huawei_modem::pdu::{Pdu, PduAddress};
 use huawei_modem::gsm_encoding::GsmMessageData;
 use failure::Error;
-use crate::util::Result;
+use crate::util::{self, Result};
 use std::mem;
 
 macro_rules! command_timeout {
@@ -197,7 +197,8 @@ impl Future for ModemManager {
                 RequestReg => self.request_reg(),
                 ForceReinit => self.reinit_modem(),
                 UpdatePath(p) => self.update_path(p),
-                CommandTimeout => self.command_timeout()
+                CommandTimeout => self.command_timeout(),
+                MakeContact(a) => self.make_contact(a)?
             }
         }
         Ok(Async::NotReady)
@@ -211,6 +212,12 @@ impl ModemManager {
         if let Err(e) = self.poll_urc_rx() {
             self.report_modem_error(e);
         }
+    }
+    fn make_contact(&mut self, addr: PduAddress) -> Result<()> {
+        let nick = util::make_nick_for_address(&addr);
+        self.store.store_recipient(&addr, &nick)?;
+        self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages).unwrap();
+        Ok(())
     }
     fn update_path(&mut self, path: Option<String>) {
         info!("Updating modem path to {:?}", path);
@@ -339,7 +346,7 @@ impl ModemManager {
                 trace!("Message is concatenated: {:?}", d);
             }
             let addr = msg.pdu.originating_address;
-            self.store.store_message(&addr, &msg.raw_pdu, csms_data)?;
+            self.store.store_sms_message(&addr, &msg.raw_pdu, csms_data)?;
         }
         self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages).unwrap();
         let mut modem = match self.inner.get_modem() {

@@ -29,14 +29,15 @@ impl Store {
             inner: Arc::new(pool)
         })
     }
-    pub fn store_message(&mut self, addr: &PduAddress, pdu: &[u8], csms_data: Option<i32>) -> Result<Message> {
+    pub fn store_sms_message(&mut self, addr: &PduAddress, pdu: &[u8], csms_data: Option<i32>) -> Result<Message> {
         use crate::schema::messages;
 
         let num = util::normalize_address(addr);
         let nm = NewMessage {
             phone_number: &num,
             pdu,
-            csms_data
+            csms_data,
+            source: Message::SOURCE_SMS
         };
         let conn = self.inner.get()?;
 
@@ -45,14 +46,15 @@ impl Store {
             .get_result(&*conn)?;
         Ok(res)
     }
-    pub fn store_plain_message(&mut self, addr: &PduAddress, text: &str, group_target: Option<i32>) -> Result<Message> {
+    pub fn store_wa_message(&mut self, addr: &PduAddress, text: &str, group_target: Option<i32>) -> Result<Message> {
         use crate::schema::messages;
 
         let num = util::normalize_address(addr);
         let nm = NewPlainMessage {
             phone_number: &num,
             text,
-            group_target
+            group_target,
+            source: Message::SOURCE_WA
         };
         let conn = self.inner.get()?;
 
@@ -138,15 +140,16 @@ impl Store {
             .execute(&*conn)?;
         Ok(())
     }
-    pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str, wa: bool) -> Result<Recipient> {
+    pub fn store_recipient(&mut self, addr: &PduAddress, nick: &str) -> Result<Recipient> {
         use crate::schema::recipients;
 
         let num = util::normalize_address(addr);
         let nr = NewRecipient {
             phone_number: &num,
             nick,
-            whatsapp: wa,
-            avatar_url: None
+            whatsapp: false,
+            avatar_url: None,
+            notify: None
         };
         let conn = self.inner.get()?;
 
@@ -154,6 +157,35 @@ impl Store {
             .values(&nr)
             .get_result(&*conn)?;
         Ok(res)
+    }
+    pub fn store_wa_recipient(&mut self, addr: &PduAddress, nick: &str, notify: Option<&str>) -> Result<Recipient> {
+        use crate::schema::recipients;
+
+        let num = util::normalize_address(addr);
+        let nr = NewRecipient {
+            phone_number: &num,
+            nick,
+            whatsapp: true,
+            avatar_url: None,
+            notify: notify
+        };
+        let conn = self.inner.get()?;
+
+        let res = ::diesel::insert_into(recipients::table)
+            .values(&nr)
+            .get_result(&*conn)?;
+        Ok(res)
+    }
+    pub fn update_recipient_notify(&mut self, addr: &PduAddress, n: Option<&str>) -> Result<()> {
+        use crate::schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+        let num = util::normalize_address(addr);
+
+        ::diesel::update(recipients)
+            .filter(phone_number.eq(num))
+            .set(notify.eq(n))
+            .execute(&*conn)?;
+        Ok(())
     }
     pub fn update_recipient_nick(&mut self, addr: &PduAddress, n: &str) -> Result<()> {
         use crate::schema::recipients::dsl::*;

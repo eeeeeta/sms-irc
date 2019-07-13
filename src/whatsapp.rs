@@ -166,7 +166,21 @@ impl WhatsappManager {
             },
             MediaFinished(r) => self.media_finished(r)?,
             CheckAcks => self.check_acks()?,
-            PrintAcks => self.print_acks()?
+            PrintAcks => self.print_acks()?,
+            MakeContact(a) => self.make_contact(a)?,
+        }
+        Ok(())
+    }
+    fn make_contact(&mut self, addr: PduAddress) -> Result<()> {
+        match util::address_to_jid(&addr) {
+            Ok(from) => {
+                let _ = self.get_wa_recipient(&from)?;
+                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
+                    .unwrap();
+            },
+            Err(e) => {
+                error!("Couldn't make contact for {}: {}", addr, e);
+            }
         }
         Ok(())
     }
@@ -246,25 +260,22 @@ impl WhatsappManager {
     fn media_finished(&mut self, r: MediaResult) -> Result<()> {
         match r.result {
             Ok(ret) => {
-                debug!("Media download/decryption job for {} / mid {:?} complete.", r.addr, r.mi);
-                self.store.store_plain_message(&r.addr, &ret, r.group)?;
-                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
-                    .unwrap();
-                if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
-                    warn!("Failed to store WA msgid {} after media download: {}", r.mi.0, e);
-                }
-                if let Some(ref mut conn) = self.conn {
-                    if let Some(p) = r.peer {
-                        conn.send_message_read(r.mi, p);
-                    }
-                }
+                debug!("Media download/decryption job for {} / mid {:?} complete.", r.from.to_string(), r.mi);
+                self.store_message(&r.from, &ret, r.group)?;
             },
             Err(e) => {
-                warn!("Decryption job failed for {} / mid {:?}: {}", r.addr, r.mi, e);
+                // FIXME: We could possibly retry the download somehow.
+                warn!("Decryption job failed for {} / mid {:?}: {}", r.from.to_string(), r.mi, e);
                 let msg = "\x01ACTION uploaded media (couldn't download)\x01";
-                self.store.store_plain_message(&r.addr, &msg, r.group)?;
-                self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
-                    .unwrap();
+                self.store_message(&r.from, msg, r.group)?;
+            }
+        }
+        if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
+            warn!("Failed to store WA msgid {} after media download: {}", r.mi.0, e);
+        }
+        if let Some(ref mut conn) = self.conn {
+            if let Some(p) = r.peer {
+                conn.send_message_read(r.mi, p);
             }
         }
         Ok(())
@@ -533,14 +544,8 @@ impl WhatsappManager {
                 mut x @ ChatMessageContent::Audio { .. } |
                 mut x @ ChatMessageContent::Document { .. } => {
                     let capt = x.take_caption();
-                    if let Some(addr) = util::jid_to_address(&from) {
-                        self.process_media(id.clone(), peer.clone(), addr, group, x)?;
-                        is_media = true;
-                    }
-                    else {
-                        warn!("couldn't make address for jid {}", from.to_string());
-                        return Ok(());
-                    }
+                    self.process_media(id.clone(), peer.clone(), from.clone(), group, x)?;
+                    is_media = true;
                     if let Some(c) = capt {
                         c
                     }
@@ -567,8 +572,10 @@ impl WhatsappManager {
             self.store_message(&from, &quote, group)?;
         }
         self.store_message(&from, &text, group)?;
-        if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
-            warn!("Failed to store received msgid {}: {}", id.0, e);
+        if !is_media {
+            if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
+                warn!("Failed to store received msgid {}: {}", id.0, e);
+            }
         }
         if let Some(p) = peer {
             if let Some(ref mut conn) = self.conn {
@@ -581,8 +588,8 @@ impl WhatsappManager {
     }
     fn store_message(&mut self, from: &Jid, text: &str, group: Option<i32>) -> Result<()> {
         if let Some(addr) = util::jid_to_address(from) {
-            let _ = self.get_wa_recipient(from, &addr)?;
-            self.store.store_plain_message(&addr, &text, group)?;
+            let _ = self.get_wa_recipient(from)?;
+            self.store.store_wa_message(&addr, &text, group)?;
             self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                 .unwrap();
         }
@@ -591,7 +598,7 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, addr: PduAddress, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
+    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, from: Jid, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
         use whatsappweb::MediaType;
 
         let (ty, fi, name) = match ct {
@@ -604,7 +611,7 @@ impl WhatsappManager {
         let mi = MediaInfo {
             ty, fi, name, peer,
             mi: id,
-            addr, group,
+            from, group,
             path: self.media_path.clone(),
             dl_path: self.dl_path.clone(),
             tx: self.wa_tx.clone()
@@ -639,22 +646,39 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn get_wa_recipient(&mut self, jid: &Jid, addr: &PduAddress) -> Result<Recipient> {
+    fn get_contact_notify_for_jid(&mut self, jid: &Jid) -> Option<&str> {
+        let mut notify: Option<&str> = None;
+        if let Some(ct) = self.contacts.get(jid) {
+            if let Some(ref name) = ct.name {
+                notify = Some(name);
+            }
+            else if let Some(ref name) = ct.notify {
+                notify = Some(name);
+            }
+        }
+        notify
+    }
+    fn get_wa_recipient(&mut self, jid: &Jid) -> Result<Recipient> {
+        let addr = match util::jid_to_address(jid) {
+            Some(a) => a,
+            None => {
+                return Err(format_err!("couldn't translate jid {} to address", jid.to_string()));
+            }
+        };
         if let Some(recip) = self.store.get_recipient_by_addr_opt(&addr)? {
             Ok(recip)
         }
         else {
-            let mut nick = util::make_nick_for_address(&addr);
-            if let Some(ct) = self.contacts.get(jid) {
-                if let Some(ref name) = ct.name {
-                    nick = util::string_to_irc_nick(name);
-                }
-                else if let Some(ref name) = ct.notify {
-                    nick = util::string_to_irc_nick(name);
-                }
-            }
+            let notify = self.get_contact_notify_for_jid(jid).map(|x| x.to_string());
+            let nick = match notify {
+                Some(ref n) => util::string_to_irc_nick(n),
+                None => util::make_nick_for_address(&addr)
+            };
             info!("Creating new WA recipient for {} (nick {})", addr, nick);
-            Ok(self.store.store_recipient(&addr, &nick, true)?)
+            let ret = self.store.store_wa_recipient(&addr, &nick, notify.as_ref().map(|x| x as &str))?;
+            self.cf_tx.unbounded_send(ContactFactoryCommand::SetupContact(addr.clone()))
+                .unwrap();
+            Ok(ret)
         }
     }
     fn on_got_group_metadata(&mut self, grp: GroupMetadata) -> Result<()> {
@@ -669,14 +693,10 @@ impl WhatsappManager {
         let mut participants = vec![];
         let mut admins = vec![];
         for &(ref jid, admin) in grp.participants.iter() {
-            if let Some(addr) = util::jid_to_address(jid) {
-                let recip = self.get_wa_recipient(&jid, &addr)?;
-                self.cf_tx.unbounded_send(ContactFactoryCommand::MakeContact(addr, true))
-                    .unwrap();
-                participants.push(recip.id);
-                if admin {
-                    admins.push(recip.id);
-                }
+            let recip = self.get_wa_recipient(jid)?;
+            participants.push(recip.id);
+            if admin {
+                admins.push(recip.id);
             }
         }
         self.store.update_group(&grp.id, participants, admins, &grp.subject)?;
@@ -816,6 +836,19 @@ impl WhatsappManager {
         warn!("Disconnected from WhatsApp - reason: {:?}", reason);
         self.connected = false;
     }
+    fn on_contact_change(&mut self, ct: WaContact) -> Result<()> {
+        let jid = ct.jid.clone();
+        if let Some(addr) = util::jid_to_address(&jid) {
+            let recip = self.get_wa_recipient(&jid)?;
+            self.contacts.insert(ct.jid.clone(), ct);
+            let notify = self.get_contact_notify_for_jid(&jid).map(|x| x.to_string());
+            if notify != recip.notify {
+                debug!("Notify changed for recipient {}: it's now {:?}", recip.nick, notify);
+                self.store.update_recipient_notify(&addr, notify.as_ref().map(|x| x as &str))?;
+            }
+        }
+        Ok(())
+    }
     fn on_user_data_changed(&mut self, ud: WaUserData) -> Result<()> {
         trace!("user data changed: {:?}", ud);
         use self::WaUserData::*;
@@ -823,12 +856,12 @@ impl WhatsappManager {
             ContactsInitial(cts) => {
                 info!("Received initial contact list");
                 for ct in cts {
-                    self.contacts.insert(ct.jid.clone(), ct);
+                    self.on_contact_change(ct)?;
                 }
             },
             ContactAddChange(ct) => {
                 debug!("Contact {} added or modified", ct.jid.to_string());
-                self.contacts.insert(ct.jid.clone(), ct);
+                self.on_contact_change(ct)?;
             },
             ContactDelete(jid) => {
                 // NOTE: I don't see any real reason to ever delete contacts.
@@ -921,10 +954,8 @@ impl WhatsappManager {
                         else {
                             let mut nicks = vec![];
                             for participant in participants {
-                                if let Some(addr) = util::jid_to_address(&participant) {
-                                    let recip = self.get_wa_recipient(&participant, &addr)?;
-                                    nicks.push(recip.nick);
-                                }
+                                let recip = self.get_wa_recipient(&participant)?;
+                                nicks.push(recip.nick);
                             }
                             let action = match change {
                                 GroupParticipantsChange::Add => "added",
@@ -939,20 +970,16 @@ impl WhatsappManager {
                 }
             },
             StatusChange(user, status) => {
-                if let Some(addr) = util::jid_to_address(&user) {
-                    let recip = self.get_wa_recipient(&user, &addr)?;
-                    info!("{} changed their status to: {}", recip.nick, status);
-                }
+                let recip = self.get_wa_recipient(&user)?;
+                info!("{} changed their status to: {}", recip.nick, status);
             },
             PictureChange { jid, removed } => {
-                if let Some(addr) = util::jid_to_address(&jid) {
-                    let recip = self.get_wa_recipient(&jid, &addr)?;
-                    if !removed {
-                        info!("{} changed their profile photo.", recip.nick);
-                    }
-                    else {
-                        info!("{} removed their profile photo.", recip.nick);
-                    }
+                let recip = self.get_wa_recipient(&jid)?;
+                if !removed {
+                    info!("{} changed their profile photo.", recip.nick);
+                }
+                else {
+                    info!("{} removed their profile photo.", recip.nick);
                 }
             },
             Battery(level) => {

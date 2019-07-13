@@ -1,12 +1,17 @@
 //! Shared behaviour for contact factories/stores.
 
 use huawei_modem::pdu::PduAddress;
-use crate::models::Recipient;
+use crate::models::{Recipient, Message};
 use crate::store::Store;
 use crate::comm::ContactManagerCommand;
 use crate::util::{self, Result};
+use futures::sync::mpsc::UnboundedSender;
+use crate::comm::{WhatsappCommand, ModemCommand, ControlBotCommand};
 
 pub trait ContactManagerManager {
+    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand>;
+    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand>;
+    fn cb_tx(&mut self) -> &mut UnboundedSender<ControlBotCommand>;
     fn setup_contact_for(&mut self, _: Recipient, _: PduAddress) -> Result<()>;
     fn remove_contact_for(&mut self, _: &PduAddress) -> Result<()>;
     fn has_contact(&mut self, _: &PduAddress) -> bool;
@@ -24,16 +29,48 @@ pub trait ContactManagerManager {
         self.setup_contact_for(recip, addr)?;
         Ok(())
     }
-    fn make_contact(&mut self, addr: PduAddress, is_wa: bool) -> Result<()> {
-        if let Some(recip) = self.store().get_recipient_by_addr_opt(&addr)? {
+    fn query_contact(&mut self, a: PduAddress, src: i32) -> Result<()> {
+        if let Some(recip) = self.store().get_recipient_by_addr_opt(&a)? {
+            self.cb_tx().unbounded_send(
+                ControlBotCommand::CommandResponse(
+                    format!("Ghost exists already; nickname is `{}`.", recip.nick)
+                    ))
+                .unwrap();
             self.setup_recipient(recip)?;
         }
         else {
-            let nick = util::make_nick_for_address(&addr);
-            let watext = if is_wa { "WA recipient"} else { "recipient" };
-            info!("Creating new {} for {} (nick {})", watext, addr, nick);
-            let recip = self.store().store_recipient(&addr, &nick, is_wa)?;
+            self.cb_tx().unbounded_send(
+                ControlBotCommand::CommandResponse(
+                    format!("Setting up a ghost for number `{}`...", a) 
+                    ))
+                .unwrap();
+            self.request_contact(a, src)?;
+        }
+        Ok(())
+    }
+    fn setup_contact(&mut self, a: PduAddress) -> Result<()> {
+        if let Some(recip) = self.store().get_recipient_by_addr_opt(&a)? {
             self.setup_recipient(recip)?;
+        }
+        else {
+            error!("Attempted to setup non-existent recipient {}", a);
+        }
+        Ok(())
+    }
+    fn request_contact(&mut self, a: PduAddress, src: i32) -> Result<()> {
+        info!("No contact exists yet for {}; asking for its creation", a);
+        match src {
+            Message::SOURCE_SMS => {
+                self.m_tx().unbounded_send(ModemCommand::MakeContact(a))
+                    .unwrap();
+            },
+            Message::SOURCE_WA => {
+                self.wa_tx().unbounded_send(WhatsappCommand::MakeContact(a))
+                    .unwrap();
+            },
+            _ => {
+                error!("Contact requested for unknown message source {}", src);
+            }
         }
         Ok(())
     }

@@ -2,9 +2,9 @@
 
 use crate::config::Config;
 use crate::store::Store;
-use crate::comm::{ContactFactoryCommand, ContactManagerCommand, ChannelMaker, InitParameters};
+use crate::comm::{ContactFactoryCommand, ContactManagerCommand, ChannelMaker, InitParameters, ModemCommand, WhatsappCommand, ControlBotCommand};
 use futures::{Future, Async, Poll, Stream};
-use futures::sync::mpsc::UnboundedReceiver;
+use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use std::collections::{HashMap, HashSet};
 use tokio_core::reactor::Handle;
 use huawei_modem::pdu::PduAddress;
@@ -18,6 +18,9 @@ use crate::config::IrcClientConfig;
 
 pub struct ContactFactory {
     rx: UnboundedReceiver<ContactFactoryCommand>,
+    cb_tx: UnboundedSender<ControlBotCommand>,
+    wa_tx: UnboundedSender<WhatsappCommand>,
+    m_tx: UnboundedSender<ModemCommand>,
     contacts_starting: HashMap<PduAddress, Box<Future<Item = ContactManager, Error = Error>>>,
     contacts: HashMap<PduAddress, ContactManager>,
     contacts_presence: HashMap<PduAddress, Option<String>>,
@@ -42,7 +45,8 @@ impl Future for ContactFactory {
                 ProcessMessages => self.process_messages()?,
                 ProcessGroups => self.process_groups()?,
                 LoadRecipients => self.load_recipients()?,
-                MakeContact(addr, wa) => self.make_contact(addr, wa)?,
+                SetupContact(addr) => self.setup_contact(addr)?,
+                QueryContact(addr, src) => self.query_contact(addr, src)?,
                 DropContact(addr) => self.drop_contact(addr)?,
                 DropContactByNick(nick) => self.drop_contact_by_nick(nick)?,
                 ForwardCommand(addr, cmd) => self.forward_cmd(&addr, cmd)?,
@@ -95,6 +99,9 @@ impl Future for ContactFactory {
     }
 }
 impl ContactManagerManager for ContactFactory {
+    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> { &mut self.wa_tx }
+    fn cb_tx(&mut self) -> &mut UnboundedSender<ControlBotCommand> { &mut self.cb_tx }
+    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> { &mut self.m_tx }
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
         let cfut = {
             let ip = self.get_init_parameters();
@@ -140,6 +147,9 @@ impl ContactFactory {
         use std::time::{Instant, Duration};
 
         let rx = cm.cf_rx.take().unwrap();
+        let wa_tx = cm.wa_tx.clone();
+        let cb_tx = cm.cb_tx.clone();
+        let m_tx = cm.modem_tx.clone();
         cm.cf_tx.unbounded_send(ContactFactoryCommand::LoadRecipients).unwrap();
         let failure_int = Interval::new(Instant::now(), Duration::from_millis(cfg.client.as_ref().unwrap().failure_interval.unwrap_or(30000)));
         Self {
@@ -149,12 +159,12 @@ impl ContactFactory {
             contacts: HashMap::new(),
             failed_contacts: HashSet::new(),
             messages_processed: HashSet::new(),
-            cfg, store, cm, hdl
+            cfg, store, cm, hdl, wa_tx, m_tx, cb_tx
         }
     }
     fn process_failures(&mut self) -> Result<()> {
         for addr in ::std::mem::replace(&mut self.failed_contacts, HashSet::new()) {
-            self.make_contact(addr, false)?;
+            self.setup_contact(addr)?;
         }
         Ok(())
     }
@@ -199,7 +209,7 @@ impl ContactFactory {
                     c.add_command(ContactManagerCommand::ProcessMessages);
                     continue;
                 }
-                self.make_contact(addr, msg.text.is_some())?;
+                self.request_contact(addr, msg.source)?;
             }
         }
         Ok(())
