@@ -214,9 +214,12 @@ impl ModemManager {
         }
     }
     fn make_contact(&mut self, addr: PduAddress) -> Result<()> {
-        let nick = util::make_nick_for_address(&addr);
-        self.store.store_recipient(&addr, &nick)?;
-        self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages).unwrap();
+        if self.store.get_recipient_by_addr_opt(&addr)?.is_none() {
+            let nick = util::make_nick_for_address(&addr);
+            self.store.store_recipient(&addr, &nick)?;
+            info!("Creating new SMS recipient for {} (nick {})", addr, nick);
+            self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages).unwrap();
+        }
         Ok(())
     }
     fn update_path(&mut self, path: Option<String>) {
