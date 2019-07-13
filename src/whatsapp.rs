@@ -78,12 +78,13 @@ pub struct WhatsappManager {
     ack_resend: Option<u64>,
     backlog_start: Option<chrono::NaiveDateTime>,
     connected: bool,
-    mark_read: bool,
     store: Store,
     qr_path: String,
     media_path: String,
     dl_path: String,
     autocreate: Option<String>,
+    autoupdate_nicks: bool,
+    mark_read: bool,
     our_jid: Option<Jid>
 }
 impl Future for WhatsappManager {
@@ -116,6 +117,7 @@ impl WhatsappManager {
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
         let mark_read = p.cfg.whatsapp.mark_read;
+        let autoupdate_nicks = p.cfg.whatsapp.autoupdate_nicks;
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
         let wa_tx = Arc::new(wa_tx);
@@ -142,7 +144,8 @@ impl WhatsappManager {
             ack_expiry: ack_expiry_ms,
             ack_resend: ack_resend_ms,
             wa_tx, backlog_start,
-            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate, mark_read
+            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate,
+            mark_read, autoupdate_nicks
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -858,6 +861,19 @@ impl WhatsappManager {
             if old_notify != notify {
                 debug!("Notify changed for recipient {}: it's now {:?}", recip.nick, notify);
                 self.store.update_recipient_notify(&addr, notify.as_ref().map(|x| x as &str))?;
+                if self.autoupdate_nicks && old_notify.is_none() {
+                    if let Some(n) = notify {
+                        let nick = util::string_to_irc_nick(&n);
+                        info!("Automatically updating nick for {} to {}", addr, nick);
+                        self.store.update_recipient_nick(&addr, &nick)?;
+                        let cmd = ContactFactoryCommand::ForwardCommand(
+                            addr,
+                            crate::comm::ContactManagerCommand::ChangeNick(nick)
+                            );
+                        self.cf_tx.unbounded_send(cmd)
+                            .unwrap();
+                    }
+                }
             }
         }
         Ok(())

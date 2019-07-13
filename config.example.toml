@@ -147,3 +147,13 @@ command_timeout_ms = 30000
 
 # autocreate_prefix = "#wa"
 
+## By default, messages are never marked as read, which may result in duplicate
+## notifications if you still use WhatsApp on your phone.
+## If you want messages to be marked as read, set `mark_read` to `true` below.
+##
+## /!\ Note that *every* message will be marked as read the instance the bridge
+## receives it; this might cause your friends to get angry at not having
+## read your messages...!
+
+mark_read = false
+

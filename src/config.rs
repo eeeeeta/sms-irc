@@ -56,7 +56,9 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub backlog_start: Option<chrono::NaiveDateTime>,
     #[serde(default)]
-    pub mark_read: bool
+    pub mark_read: bool,
+    #[serde(default)]
+    pub autoupdate_nicks: bool 
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {
