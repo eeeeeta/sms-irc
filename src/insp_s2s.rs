@@ -682,8 +682,9 @@ impl InspLink {
             let addr = util::un_normalize_address(&msg.phone_number)
                 .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
             if !self.has_contact(&addr) {
-                self.request_contact(addr, msg.source)?;
-                continue;
+                if !self.request_contact(addr.clone(), msg.source)? {
+                    continue;
+                }
             }
             let (uuid, is_wa) = {
                 let ct = self.contacts.get(&addr).unwrap();

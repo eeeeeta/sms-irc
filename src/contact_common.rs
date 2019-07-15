@@ -57,22 +57,28 @@ pub trait ContactManagerManager {
         }
         Ok(())
     }
-    fn request_contact(&mut self, a: PduAddress, src: i32) -> Result<()> {
-        info!("No contact exists yet for {}; asking for its creation", a);
-        match src {
-            Message::SOURCE_SMS => {
-                self.m_tx().unbounded_send(ModemCommand::MakeContact(a))
-                    .unwrap();
-            },
-            Message::SOURCE_WA => {
-                self.wa_tx().unbounded_send(WhatsappCommand::MakeContact(a))
-                    .unwrap();
-            },
-            _ => {
-                error!("Contact requested for unknown message source {}", src);
-            }
+    fn request_contact(&mut self, a: PduAddress, src: i32) -> Result<bool> {
+        if let Some(recip) = self.store().get_recipient_by_addr_opt(&a)? {
+            self.setup_recipient(recip)?;
+            Ok(true)
         }
-        Ok(())
+        else {
+            info!("No contact exists yet for {}; asking for its creation", a);
+            match src {
+                Message::SOURCE_SMS => {
+                    self.m_tx().unbounded_send(ModemCommand::MakeContact(a))
+                        .unwrap();
+                },
+                Message::SOURCE_WA => {
+                    self.wa_tx().unbounded_send(WhatsappCommand::MakeContact(a))
+                        .unwrap();
+                },
+                _ => {
+                    error!("Contact requested for unknown message source {}", src);
+                }
+            }
+            Ok(false)
+        }
     }
     fn drop_contact(&mut self, addr: PduAddress) -> Result<()> {
         info!("Dropping contact {}", addr);

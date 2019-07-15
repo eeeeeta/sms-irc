@@ -218,6 +218,8 @@ impl ModemManager {
             let nick = util::make_nick_for_address(&addr);
             self.store.store_recipient(&addr, &nick)?;
             info!("Creating new SMS recipient for {} (nick {})", addr, nick);
+            self.cf_tx.unbounded_send(ContactFactoryCommand::SetupContact(addr.clone()))
+                .unwrap();
             self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages).unwrap();
         }
         Ok(())
