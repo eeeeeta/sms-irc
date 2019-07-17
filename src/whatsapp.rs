@@ -28,6 +28,7 @@ use regex::{Regex, Captures};
 use chrono::prelude::*;
 use tokio_timer::Interval;
 use std::time::{Instant, Duration};
+use unicode_segmentation::UnicodeSegmentation;
 
 struct WhatsappHandler {
     tx: Arc<UnboundedSender<WhatsappCommand>>
@@ -196,9 +197,11 @@ impl WhatsappManager {
         for (mid, mss) in self.outgoing_messages.iter_mut() {
             let delta = now - mss.sent_ts;
             let mut summary = mss.content.quoted_description();
-            if summary.len() > 10 {
-                summary.truncate(10);
-                summary.push_str("…");
+            if summary.len() > 15 {
+                summary = summary.graphemes(true)
+                    .take(10)
+                    .chain(std::iter::once("…"))
+                    .collect();
             }
             let al: std::borrow::Cow<str> = match mss.ack_level {
                 Some(al) => format!("{:?}", al).into(),
@@ -517,7 +520,12 @@ impl WhatsappManager {
                     debug!("Discarding empty unimplemented message.");
                     return Ok(());
                 }
-                det.truncate(128);
+                if det.len() > 128 {
+                    det = det.graphemes(true)
+                        .take(128)
+                        .chain(std::iter::once("…"))
+                        .collect();
+                }
                 format!("{}[\x02\x0304unimplemented\x0f] {}", ts_text, det)
             },
             ChatMessageContent::LiveLocation { lat, long, speed, .. } => {
@@ -580,8 +588,10 @@ impl WhatsappManager {
             };
             let mut message = qm.content.quoted_description();
             if message.len() > 128 {
-                message.truncate(128);
-                message.push_str("…");
+                message = message.graphemes(true)
+                    .take(128)
+                    .chain(std::iter::once("…"))
+                    .collect();
             }
             let quote = format!("\x0315> \x1d{}{}", nick, message);
             self.store_message(&from, &quote, group)?;
