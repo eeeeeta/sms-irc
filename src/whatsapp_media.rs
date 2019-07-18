@@ -15,6 +15,7 @@ use std::sync::Arc;
 use reqwest::header::USER_AGENT;
 use reqwest::StatusCode;
 use mime_guess::get_mime_extensions_str;
+use chrono::NaiveDateTime;
 
 pub fn store_contact(path: &str, dl_path: &str, vcard: String) -> Result<String> {
     let uu = Uuid::new_v4().to_simple().to_string();
@@ -36,13 +37,15 @@ pub struct MediaInfo {
     pub path: String,
     pub dl_path: String,
     pub tx: Arc<UnboundedSender<WhatsappCommand>>,
-    pub name: Option<String>
+    pub name: Option<String>,
+    pub ts: NaiveDateTime,
 }
 pub struct MediaResult {
     pub from: Jid,
     pub group: Option<i32>,
     pub mi: MessageId,
     pub peer: Option<Peer>,
+    pub ts: NaiveDateTime,
     pub result: Result<String>
 }
 impl MediaInfo {
@@ -103,6 +106,7 @@ impl MediaInfo {
                 mi: self.mi,
                 from: self.from,
                 peer: self.peer,
+                ts: self.ts,
                 result: ret
             };
             self.tx.unbounded_send(WhatsappCommand::MediaFinished(ret))

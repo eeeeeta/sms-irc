@@ -86,6 +86,7 @@ pub struct WhatsappManager {
     autocreate: Option<String>,
     autoupdate_nicks: bool,
     mark_read: bool,
+    load_history_messages: Option<u16>,
     our_jid: Option<Jid>
 }
 impl Future for WhatsappManager {
@@ -115,6 +116,7 @@ impl WhatsappManager {
         let ack_warn_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(5000);
         let ack_warn_pending_ms = p.cfg.whatsapp.ack_warn_pending_ms.unwrap_or(ack_warn_ms * 2);
         let ack_expiry_ms = p.cfg.whatsapp.ack_expiry_ms.unwrap_or(60000);
+        let load_history_messages = p.cfg.whatsapp.load_history_messages;
         let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
         let mark_read = p.cfg.whatsapp.mark_read;
@@ -146,7 +148,7 @@ impl WhatsappManager {
             ack_resend: ack_resend_ms,
             wa_tx, backlog_start,
             rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate,
-            mark_read, autoupdate_nicks
+            mark_read, autoupdate_nicks, load_history_messages
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -168,12 +170,13 @@ impl WhatsappManager {
             Disconnect(war) => self.on_disconnect(war),
             GotGroupMetadata(meta) => self.on_got_group_metadata(meta)?,
             Message(new, msg) => {
-                self.on_message(msg, new)?;
+                self.on_message(*msg, new)?;
             },
             MediaFinished(r) => self.media_finished(r)?,
             CheckAcks => self.check_acks()?,
             PrintAcks => self.print_acks()?,
             MakeContact(a) => self.make_contact(a)?,
+            HistoryResponse(j, h) => self.history_response(j, h)?
         }
         Ok(())
     }
@@ -269,13 +272,13 @@ impl WhatsappManager {
         match r.result {
             Ok(ret) => {
                 debug!("Media download/decryption job for {} / mid {:?} complete.", r.from.to_string(), r.mi);
-                self.store_message(&r.from, &ret, r.group)?;
+                self.store_message(&r.from, &ret, r.group, r.ts)?;
             },
             Err(e) => {
                 // FIXME: We could possibly retry the download somehow.
                 warn!("Decryption job failed for {} / mid {:?}: {}", r.from.to_string(), r.mi, e);
                 let msg = "\x01ACTION uploaded media (couldn't download)\x01";
-                self.store_message(&r.from, msg, r.group)?;
+                self.store_message(&r.from, msg, r.group, r.ts)?;
             }
         }
         if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
@@ -423,16 +426,12 @@ impl WhatsappManager {
         }
         Ok(None)
     }
-    fn on_message(&mut self, msg: Box<WaMessage>, is_new: bool) -> Result<()> {
+    fn on_message(&mut self, msg: WaMessage, is_new: bool) -> Result<()> {
         use whatsappweb::message::{Direction};
-        use std::fmt::Write;
 
-        let now = chrono::Utc::now().naive_utc();
         trace!("processing WA message (new {}): {:?}", is_new, msg);
-        let msg = *msg; // otherwise stupid borrowck gets angry, because Box
         let WaMessage { direction, content, id, quoted, .. } = msg;
         debug!("got message from dir {:?}", direction);
-        let mut ts_text = String::new();
         // If we don't mark things as read, we have to check every 'new' message,
         // because they might not actually be new.
         if !self.mark_read || !is_new {
@@ -449,17 +448,6 @@ impl WhatsappManager {
                     return Ok(());
                 }
             }
-            if self.store.is_wa_msgid_stored(&id.0)? {
-                debug!("Rejecting backlog message: already in database");
-                return Ok(());
-            }
-            let local = Local.from_utc_datetime(&msg.time).naive_local();
-            write!(&mut ts_text, "\x0315\x02[\x02")?;
-            if now.date() != msg.time.date() {
-                write!(&mut ts_text, "{} ", local.date())?;
-            }
-            write!(&mut ts_text, "{}", local.time())?;
-            write!(&mut ts_text, "\x02]\x02\x0f ")?;
         }
         let mut peer = None;
         let mut is_ours = false;
@@ -514,7 +502,7 @@ impl WhatsappManager {
         };
         let mut is_media = false;
         let text = match content {
-            ChatMessageContent::Text(s) => format!("{}{}", ts_text, self.process_message(&s)),
+            ChatMessageContent::Text(s) => self.process_message(&s),
             ChatMessageContent::Unimplemented(mut det) => {
                 if det.trim() == "" {
                     debug!("Discarding empty unimplemented message.");
@@ -526,7 +514,7 @@ impl WhatsappManager {
                         .chain(std::iter::once("…"))
                         .collect();
                 }
-                format!("{}[\x02\x0304unimplemented\x0f] {}", ts_text, det)
+                format!("[\x02\x0304unimplemented\x0f] {}", det)
             },
             ChatMessageContent::LiveLocation { lat, long, speed, .. } => {
                 // FIXME: use write!() maybe
@@ -536,7 +524,7 @@ impl WhatsappManager {
                 else {
                     format!("broadcasting live location - https://google.com/maps?q={},{}", lat, long)
                 };
-                format!("\x01ACTION is {}{}\x01", ts_text, spd)
+                format!("\x01ACTION is {}\x01", spd)
             },
             ChatMessageContent::Location { lat, long, name, .. } => {
                 let place = if let Some(n) = name {
@@ -545,20 +533,20 @@ impl WhatsappManager {
                 else {
                     "somewhere".into()
                 };
-                format!("\x01ACTION is {}{} - https://google.com/maps?q={},{}\x01", ts_text, place, lat, long)
+                format!("\x01ACTION is {} - https://google.com/maps?q={},{}\x01", place, lat, long)
             },
             ChatMessageContent::Redaction { mid } => {
                 // TODO: make this more useful
-                format!("\x01ACTION {}redacted message ID \x11{}\x11\x01", ts_text, mid.0)
+                format!("\x01ACTION redacted message ID \x11{}\x11\x01", mid.0)
             },
             ChatMessageContent::Contact { display_name, vcard } => {
                 match crate::whatsapp_media::store_contact(&self.media_path, &self.dl_path, vcard) {
                     Ok(link) => {
-                        format!("\x01ACTION {}uploaded a contact for '{}' - {}\x01", ts_text, display_name, link)
+                        format!("\x01ACTION uploaded a contact for '{}' - {}\x01", display_name, link)
                     },
                     Err(e) => {
                         warn!("Failed to save contact card: {}", e);
-                        format!("\x01ACTION {}uploaded a contact for '{}' (couldn't download)\x01", ts_text, display_name)
+                        format!("\x01ACTION uploaded a contact for '{}' (couldn't download)\x01", display_name)
                     }
                 }
             },
@@ -567,7 +555,7 @@ impl WhatsappManager {
                 mut x @ ChatMessageContent::Audio { .. } |
                 mut x @ ChatMessageContent::Document { .. } => {
                     let capt = x.take_caption();
-                    self.process_media(id.clone(), peer.clone(), from.clone(), group, x)?;
+                    self.process_media(id.clone(), peer.clone(), from.clone(), group, x, msg.time)?;
                     is_media = true;
                     if let Some(c) = capt {
                         c
@@ -594,9 +582,9 @@ impl WhatsappManager {
                     .collect();
             }
             let quote = format!("\x0315> \x1d{}{}", nick, message);
-            self.store_message(&from, &quote, group)?;
+            self.store_message(&from, &quote, group, msg.time)?;
         }
-        self.store_message(&from, &text, group)?;
+        self.store_message(&from, &text, group, msg.time)?;
         if !is_media {
             if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
                 warn!("Failed to store received msgid {}: {}", id.0, e);
@@ -611,10 +599,10 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn store_message(&mut self, from: &Jid, text: &str, group: Option<i32>) -> Result<()> {
+    fn store_message(&mut self, from: &Jid, text: &str, group: Option<i32>, ts: NaiveDateTime) -> Result<()> {
         if let Some(addr) = util::jid_to_address(from) {
             let _ = self.get_wa_recipient(from)?;
-            self.store.store_wa_message(&addr, &text, group)?;
+            self.store.store_wa_message(&addr, &text, group, ts)?;
             self.cf_tx.unbounded_send(ContactFactoryCommand::ProcessMessages)
                 .unwrap();
         }
@@ -623,7 +611,35 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, from: Jid, group: Option<i32>, ct: ChatMessageContent) -> Result<()> {
+    fn load_history(&mut self, msgs: u16) -> Result<()> {
+        info!("Loading {} lines of history per chat for {} chats", msgs, self.chats.len());
+        for (jid, _) in self.chats.iter() {
+            let tx = self.wa_tx.clone();
+            let j = jid.clone();
+            debug!("Loading history for {}", j.to_string());
+            self.conn.as_mut().unwrap()
+                .get_messages_before(j.clone(), "".into(), msgs, Box::new(move |history| {
+                    tx.unbounded_send(WhatsappCommand::HistoryResponse(j.clone(), history))
+                        .unwrap();
+                }));
+        }
+        Ok(())
+    }
+    fn history_response(&mut self, jid: Jid, history: Option<Vec<WaMessage>>) -> Result<()> {
+        match history {
+            Some(msgs) => {
+                debug!("Got history response for {} - {} lines", jid.to_string(), msgs.len());
+                for msg in msgs {
+                    self.on_message(msg, false)?;
+                }
+            },
+            _ => {
+                warn!("History response for {} was empty", jid.to_string());
+            }
+        }
+        Ok(())
+    }
+    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, from: Jid, group: Option<i32>, ct: ChatMessageContent, ts: NaiveDateTime) -> Result<()> {
         use whatsappweb::MediaType;
 
         let (ty, fi, name) = match ct {
@@ -634,7 +650,7 @@ impl WhatsappManager {
             _ => unreachable!()
         };
         let mi = MediaInfo {
-            ty, fi, name, peer,
+            ty, fi, name, peer, ts,
             mi: id,
             from, group,
             path: self.media_path.clone(),
@@ -917,6 +933,9 @@ impl WhatsappManager {
                 for ct in cts {
                     self.chats.insert(ct.jid.clone(), ct);
                 }
+                if let Some(n) = self.load_history_messages {
+                    self.load_history(n)?;
+                }
             },
             ChatAction(jid, act) => {
                 use whatsappweb::ChatAction::*;
@@ -976,7 +995,8 @@ impl WhatsappManager {
             },
             GroupSubjectChange { group, subject, subject_owner, .. } => {
                 if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
-                    self.store_message(&subject_owner, &format!("\x01ACTION changed the subject to '{}'\x01", subject), Some(id))?;
+                    let ts = Utc::now().naive_utc();
+                    self.store_message(&subject_owner, &format!("\x01ACTION changed the subject to '{}'\x01", subject), Some(id), ts)?;
                     self.request_update_group(group)?;
                 }
             },
@@ -984,11 +1004,12 @@ impl WhatsappManager {
                 use whatsappweb::GroupParticipantsChange;
 
                 debug!("Participants {:?} in group {} changed: {:?} (by {:?})", participants, group.to_string(), change, inducer);
+                let ts = Utc::now().naive_utc();
                 if let Some(id) = self.store.get_group_by_jid_opt(&group)?.map(|x| x.id) {
                     if let Some(inducer) = inducer {
                         // Special-case: someone removing themself is just them leaving.
                         if participants.len() == 1 && participants[0] == inducer {
-                            self.store_message(&inducer, "\x01ACTION left the group\x01", Some(id))?;
+                            self.store_message(&inducer, "\x01ACTION left the group\x01", Some(id), ts)?;
                         }
                         else {
                             let mut nicks = vec![];
@@ -1002,7 +1023,7 @@ impl WhatsappManager {
                                 GroupParticipantsChange::Promote => "promoted",
                                 GroupParticipantsChange::Demote => "demoted",
                             };
-                            self.store_message(&inducer, &format!("\x01ACTION {}: {}\x01", action, nicks.join(", ")), Some(id))?;
+                            self.store_message(&inducer, &format!("\x01ACTION {}: {}\x01", action, nicks.join(", ")), Some(id), ts)?;
                         }
                     }
                     self.request_update_group(group)?;

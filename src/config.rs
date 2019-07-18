@@ -58,7 +58,9 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub mark_read: bool,
     #[serde(default)]
-    pub autoupdate_nicks: bool 
+    pub autoupdate_nicks: bool,
+    #[serde(default)]
+    pub load_history_messages: Option<u16>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {

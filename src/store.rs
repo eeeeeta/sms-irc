@@ -11,6 +11,7 @@ use serde_json;
 use whatsappweb::connection::PersistentSession;
 use whatsappweb::Jid;
 use crate::util::{self, Result};
+use chrono::NaiveDateTime;
 use crate::models::*;
 
 embed_migrations!();
@@ -46,7 +47,7 @@ impl Store {
             .get_result(&*conn)?;
         Ok(res)
     }
-    pub fn store_wa_message(&mut self, addr: &PduAddress, text: &str, group_target: Option<i32>) -> Result<Message> {
+    pub fn store_wa_message(&mut self, addr: &PduAddress, text: &str, group_target: Option<i32>, ts: NaiveDateTime) -> Result<Message> {
         use crate::schema::messages;
 
         let num = util::normalize_address(addr);
@@ -54,7 +55,8 @@ impl Store {
             phone_number: &num,
             text,
             group_target,
-            source: Message::SOURCE_WA
+            source: Message::SOURCE_WA,
+            ts
         };
         let conn = self.inner.get()?;
 
@@ -241,6 +243,7 @@ impl Store {
         let conn = self.inner.get()?;
 
         let res = messages
+            .order((ts.asc(), id.asc()))
             .load(&*conn)?;
         Ok(res)
     }
@@ -295,6 +298,7 @@ impl Store {
         let num = util::normalize_address(addr);
 
         let res = messages.filter(phone_number.eq(num))
+            .order((ts.asc(), id.asc()))
             .load(&*conn)?;
         Ok(res)
     }

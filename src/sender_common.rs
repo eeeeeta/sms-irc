@@ -60,8 +60,30 @@ pub trait Sender {
         Ok(())
     }
     fn process_msg_plain(&mut self, nick: &str, msg: Message) -> Result<()> {
-        let text = msg.text.as_ref().expect("msg has neither text nor pdu");
-        self.send_raw_message(nick, text, msg.group_target)?;
+        use std::fmt::Write;
+        use chrono::prelude::*;
+
+        let mut output = String::new();
+        let mut text = msg.text.as_ref().expect("msg has neither text nor pdu") as &str;
+        
+        let now = chrono::Utc::now().naive_utc();
+        let tsdiff = now.signed_duration_since(msg.ts);
+        if text.starts_with("\x01ACTION ") {
+            write!(&mut output, "\x01ACTION ")?;
+            text = &text[8..]; // len('\x01ACTION ') = 8
+        }
+        if tsdiff.num_seconds() > 5 {
+            let local = Local.from_utc_datetime(&msg.ts).naive_local();
+            write!(&mut output, "\x0315\x02[\x02")?;
+            if now.date() != msg.ts.date() {
+                write!(&mut output, "{} ", local.date())?;
+            }
+            write!(&mut output, "{}", local.time())?;
+            write!(&mut output, "\x02]\x02\x0f ")?;
+        }
+        write!(&mut output, "{}", text)?;
+
+        self.send_raw_message(nick, &output, msg.group_target)?;
         self.store().delete_message(msg.id)?;
         Ok(())
     }

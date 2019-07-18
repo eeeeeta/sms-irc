@@ -18,6 +18,7 @@ table! {
         group_target -> Nullable<Int4>,
         text -> Nullable<Varchar>,
         source -> Int4,
+        ts -> Timestamp,
     }
 }
 

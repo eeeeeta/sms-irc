@@ -1,5 +1,6 @@
 use crate::schema::{recipients, messages, groups, wa_persistence, wa_msgids};
 use serde_json::Value;
+use chrono::NaiveDateTime;
 
 #[derive(Queryable)]
 pub struct Recipient {
@@ -28,6 +29,7 @@ pub struct Message {
     pub group_target: Option<i32>,
     pub text: Option<String>,
     pub source: i32,
+    pub ts: NaiveDateTime
 }
 impl Message {
     pub const SOURCE_SMS: i32 = 0;
@@ -68,7 +70,7 @@ pub struct NewMessage<'a> {
     pub phone_number: &'a str,
     pub pdu: &'a [u8],
     pub csms_data: Option<i32>,
-    pub source: i32
+    pub source: i32,
 }
 #[derive(Insertable)]
 #[table_name="messages"]
@@ -76,5 +78,6 @@ pub struct NewPlainMessage<'a> {
     pub phone_number: &'a str,
     pub group_target: Option<i32>,
     pub text: &'a str,
-    pub source: i32
+    pub source: i32,
+    pub ts: NaiveDateTime
 }

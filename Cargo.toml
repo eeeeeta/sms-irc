@@ -38,7 +38,7 @@ features = ["serde"]
 version = "0.4"
 
 [dependencies.diesel]
-features = ["postgres", "serde_json"]
+features = ["postgres", "serde_json", "chrono"]
 version = "1.0"
 
 [dependencies.huawei-modem]
@@ -49,7 +49,8 @@ features = ["v4"]
 version = "0.7"
 
 [dependencies.whatsappweb-eta]
-git = "https://git.theta.eu.org/whatsappweb-rs.git/"
+#git = "https://git.theta.eu.org/whatsappweb-rs.git/"
+path = "../whatsappweb-rs"
 
 [package.metadata.rpm.cargo]
 buildflags = ["--release"]

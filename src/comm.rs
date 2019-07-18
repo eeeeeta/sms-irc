@@ -48,6 +48,7 @@ pub enum WhatsappCommand {
     CheckAcks,
     PrintAcks,
     MakeContact(PduAddress),
+    HistoryResponse(Jid, Option<Vec<WaMessage>>)
 }
 #[allow(dead_code)]
 pub enum ContactFactoryCommand {
