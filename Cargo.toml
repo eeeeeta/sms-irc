@@ -49,8 +49,8 @@ features = ["v4"]
 version = "0.7"
 
 [dependencies.whatsappweb-eta]
-#git = "https://git.theta.eu.org/whatsappweb-rs.git/"
-path = "../whatsappweb-rs"
+git = "https://git.theta.eu.org/whatsappweb-rs.git/"
+#path = "../whatsappweb-rs"
 
 [package.metadata.rpm.cargo]
 buildflags = ["--release"]
