@@ -21,7 +21,7 @@ pub struct ContactFactory {
     cb_tx: UnboundedSender<ControlBotCommand>,
     wa_tx: UnboundedSender<WhatsappCommand>,
     m_tx: UnboundedSender<ModemCommand>,
-    contacts_starting: HashMap<PduAddress, Box<Future<Item = ContactManager, Error = Error>>>,
+    contacts_starting: HashMap<PduAddress, Box<dyn Future<Item = ContactManager, Error = Error>>>,
     contacts: HashMap<PduAddress, ContactManager>,
     contacts_presence: HashMap<PduAddress, Option<String>>,
     failed_contacts: HashSet<PduAddress>,

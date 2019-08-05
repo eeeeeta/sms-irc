@@ -4,16 +4,9 @@ use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use huawei_modem::cmd::sms::SmsMessage;
 use huawei_modem::pdu::PduAddress;
 use whatsappweb::Jid;
-use whatsappweb::GroupMetadata;
-use whatsappweb::connection::State as WaState;
-use whatsappweb::connection::UserData as WaUserData;
-use whatsappweb::connection::PersistentSession as WaPersistentSession;
-use whatsappweb::connection::DisconnectReason as WaDisconnectReason;
-use whatsappweb::message::ChatMessage as WaMessage;
 use crate::config::Config;
 use crate::store::Store;
 use tokio_core::reactor::Handle;
-use qrcode::QrCode;
 use crate::whatsapp_media::MediaResult;
 
 pub enum ModemCommand {
@@ -31,24 +24,16 @@ pub enum ModemCommand {
 pub enum WhatsappCommand {
     StartRegistration,
     LogonIfSaved,
-    QrCode(QrCode),
     SendGroupMessage(String, String),
     SendDirectMessage(PduAddress, String),
     GroupAssociate(Jid, String),
     GroupList,
     GroupRemove(String),
     GroupUpdateAll,
-    GotGroupMetadata(GroupMetadata),
-    StateChanged(WaState),
-    UserDataChanged(WaUserData),
-    PersistentChanged(WaPersistentSession),
-    Disconnect(WaDisconnectReason),
-    Message(bool, Box<WaMessage>),
     MediaFinished(MediaResult),
     CheckAcks,
     PrintAcks,
     MakeContact(PduAddress),
-    HistoryResponse(Jid, Option<Vec<WaMessage>>)
 }
 #[allow(dead_code)]
 pub enum ContactFactoryCommand {

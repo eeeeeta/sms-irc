@@ -32,14 +32,14 @@ enum ModemInner {
     Uninitialized,
     Disabled,
     Waiting(Delay),
-    Initializing(Box<Future<Item = HuaweiModem, Error = Error>>),
+    Initializing(Box<dyn Future<Item = HuaweiModem, Error = Error>>),
     Running {
         modem: HuaweiModem,
         urc_rx: UnboundedReceiver<AtResponse>
     },
 }
 impl ModemInner {
-    fn init_future(path: &str, hdl: &Handle, timeout_ms: u32) -> Box<Future<Item = HuaweiModem, Error = Error>> {
+    fn init_future(path: &str, hdl: &Handle, timeout_ms: u32) -> Box<dyn Future<Item = HuaweiModem, Error = Error>> {
         info!("Initializing modem {}", path);
         let modem = HuaweiModem::new_from_path(path, hdl);
         let fut = modem.into_future()

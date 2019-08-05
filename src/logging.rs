@@ -29,7 +29,9 @@ impl Logger {
 }
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        if self.ignore_other_libraries && !metadata.target().starts_with("sms_irc") {
+        if self.ignore_other_libraries 
+            && !metadata.target().starts_with("sms_irc") 
+            && !metadata.target().starts_with("whatsappweb_eta") {
             return false;
         }
         let lvl = metadata.level();
@@ -37,7 +39,9 @@ impl log::Log for Logger {
     }
     fn log(&self, rec: &Record) {
         use log::Level::*;
-        if self.ignore_other_libraries && !rec.target().starts_with("sms_irc") {
+        if self.ignore_other_libraries 
+            && !rec.target().starts_with("sms_irc") 
+            && !rec.target().starts_with("whatsappweb_eta") {
             return;
         }
         if rec.level() <= self.stdout_loglevel {

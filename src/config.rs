@@ -60,7 +60,9 @@ pub struct WhatsappConfig {
     #[serde(default)]
     pub autoupdate_nicks: bool,
     #[serde(default)]
-    pub load_history_messages: Option<u16>
+    pub load_history_messages: Option<u16>,
+    #[serde(default)]
+    pub backoff_time_ms: Option<u64>
 }
 #[derive(Deserialize, Debug, Clone)]
 pub struct IrcClientConfig {

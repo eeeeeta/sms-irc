@@ -26,6 +26,7 @@ mod control_common;
 mod sender_common;
 mod whatsapp;
 mod whatsapp_media;
+mod whatsapp_conn;
 mod insp_s2s;
 mod insp_user;
 mod irc_s2c;

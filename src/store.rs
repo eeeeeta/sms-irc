@@ -8,7 +8,7 @@ use std::sync::Arc;
 use huawei_modem::pdu::PduAddress;
 use diesel::prelude::*;
 use serde_json;
-use whatsappweb::connection::PersistentSession;
+use whatsappweb::session::PersistentSession;
 use whatsappweb::Jid;
 use crate::util::{self, Result};
 use chrono::NaiveDateTime;
