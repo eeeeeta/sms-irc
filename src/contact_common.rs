@@ -86,6 +86,15 @@ pub trait ContactManagerManager {
         self.remove_contact_for(&addr)?;
         Ok(())
     }
+    fn subscribe_presence_by_nick(&mut self, nick: String) {
+        if let Some(a) = self.resolve_nick(&nick) {
+            self.wa_tx().unbounded_send(WhatsappCommand::SubscribePresence(a))
+                .unwrap();
+        }
+        else {
+            warn!("Tried to subscribe presence for nonexistent nick {}", nick);
+        }
+    }
     fn drop_contact_by_nick(&mut self, nick: String) -> Result<()> {
         if let Some(a) = self.resolve_nick(&nick) {
             self.drop_contact(a)?;

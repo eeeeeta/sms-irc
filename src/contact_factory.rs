@@ -51,6 +51,7 @@ impl Future for ContactFactory {
                 DropContactByNick(nick) => self.drop_contact_by_nick(nick)?,
                 ForwardCommand(addr, cmd) => self.forward_cmd(&addr, cmd)?,
                 ForwardCommandByNick(nick, cmd) => self.forward_cmd_by_nick(&nick, cmd)?,
+                SubscribePresenceByNick(nick) => self.subscribe_presence_by_nick(nick),
                 ProcessAvatars => {
                     // FIXME: implement
                 }

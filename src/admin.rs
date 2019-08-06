@@ -16,6 +16,7 @@ macro_rules! extract_command {
 pub enum GhostCommand {
     ChangeNick(String),
     SetWhatsapp(bool),
+    PresenceSubscribe,
     Remove
 }
 impl GhostCommand {
@@ -28,6 +29,9 @@ The following commands are available:
     Enable or disable WhatsApp mode for this recipient.
 \x02REMOVE\x0f \x0307(aliases \x02KILL\x02, \x02DIE\x02)\x0f
     Remove this recipient, causing them to disconnect.
+\x02PRESUB\x0f
+    \x02Sub\x0fscribe to updates about the user's \x02pre\x0fsence, if they're using WhatsApp.
+    This command will usually not be required, and is mainly useful for debugging.
 \x02*** End of subcommand help ***\x0f"
     }
     pub fn parse(inp: &[&str]) -> Option<Self> {
@@ -43,6 +47,9 @@ The following commands are available:
                 else {
                     None
                 }
+            },
+            ("presub", _) => {
+                Some(GhostCommand::PresenceSubscribe)
             },
             ("die", _) | ("kill", _) | ("remove", _) => {
                 Some(GhostCommand::Remove)

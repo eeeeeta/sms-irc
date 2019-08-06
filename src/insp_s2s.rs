@@ -600,6 +600,7 @@ impl InspLink {
             },
             ForwardCommand(a, cmd) => self.forward_cmd(&a, cmd)?,
             ForwardCommandByNick(a, cmd) => self.forward_cmd_by_nick(&a, cmd)?,
+            SubscribePresenceByNick(nick) => self.subscribe_presence_by_nick(nick),
             ProcessAvatars => {
                 // FIXME: implement
                 //

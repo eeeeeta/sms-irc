@@ -34,6 +34,7 @@ pub enum WhatsappCommand {
     CheckAcks,
     PrintAcks,
     MakeContact(PduAddress),
+    SubscribePresence(PduAddress)
 }
 #[allow(dead_code)]
 pub enum ContactFactoryCommand {
@@ -47,7 +48,8 @@ pub enum ContactFactoryCommand {
     DropContactByNick(String),
     LoadRecipients,
     ForwardCommand(PduAddress, ContactManagerCommand),
-    ForwardCommandByNick(String, ContactManagerCommand)
+    ForwardCommandByNick(String, ContactManagerCommand),
+    SubscribePresenceByNick(String)
 }
 pub enum ContactManagerCommand {
     ProcessMessages,

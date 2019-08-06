@@ -51,6 +51,10 @@ pub trait ControlCommon {
                     SetWhatsapp(n) => {
                         c = Some(ContactManagerCommand::SetWhatsapp(n));
                     },
+                    PresenceSubscribe => {
+                        self.cf_tx().unbounded_send(ContactFactoryCommand::SubscribePresenceByNick(nick.clone()))
+                            .unwrap();
+                    },
                     Remove => {
                         self.cf_tx().unbounded_send(ContactFactoryCommand::DropContactByNick(nick.clone()))
                             .unwrap();

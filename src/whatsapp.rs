@@ -49,6 +49,7 @@ pub struct WhatsappManager {
     cb_tx: UnboundedSender<ControlBotCommand>,
     contacts: HashMap<Jid, WaContact>,
     chats: HashMap<Jid, WaChat>,
+    presence_requests: HashMap<Jid, Instant>,
     outgoing_messages: HashMap<String, MessageSendStatus>,
     ack_warn: u64,
     ack_warn_pending: u64,
@@ -63,6 +64,7 @@ pub struct WhatsappManager {
     autocreate: Option<String>,
     autoupdate_nicks: bool,
     mark_read: bool,
+    track_presence: bool,
     our_jid: Option<Jid>,
     outbox: VecDeque<WaRequest>
 }
@@ -129,6 +131,7 @@ impl WhatsappManager {
         let mark_read = p.cfg.whatsapp.mark_read;
         let autoupdate_nicks = p.cfg.whatsapp.autoupdate_nicks;
         let backoff_time_ms = p.cfg.whatsapp.backoff_time_ms.unwrap_or(10000);
+        let track_presence = p.cfg.whatsapp.track_presence;
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
         let wa_tx = Arc::new(wa_tx);
@@ -152,6 +155,7 @@ impl WhatsappManager {
             outgoing_messages: HashMap::new(),
             connected: false,
             our_jid: None,
+            presence_requests: HashMap::new(),
             ack_warn: ack_warn_ms,
             ack_warn_pending: ack_warn_pending_ms,
             ack_expiry: ack_expiry_ms,
@@ -159,7 +163,7 @@ impl WhatsappManager {
             outbox: VecDeque::new(),
             wa_tx, backlog_start,
             rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate,
-            mark_read, autoupdate_nicks
+            mark_read, autoupdate_nicks, track_presence
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -177,7 +181,26 @@ impl WhatsappManager {
             MediaFinished(r) => self.media_finished(r)?,
             CheckAcks => self.check_acks()?,
             PrintAcks => self.print_acks()?,
-            MakeContact(a) => self.make_contact(a)?
+            MakeContact(a) => self.make_contact(a)?,
+            SubscribePresence(a) => self.subscribe_presence(a)?
+        }
+        Ok(())
+    }
+    fn subscribe_presence(&mut self, addr: PduAddress) -> Result<()> {
+        match util::address_to_jid(&addr) {
+            Ok(from) => {
+                let recip = self.get_wa_recipient(&from)?;
+                if self.connected {
+                    self.cb_respond(format!("Subscribing to presence updates from '{}' (jid {})`", recip.nick, from));
+                    self.outbox.push_back(WaRequest::SubscribePresence(from));
+                }
+                else {
+                    self.cb_respond("Error subscribing: not connected to WA");
+                }
+            },
+            Err(_) => {
+                self.cb_respond("Error subscribing: invalid PduAddress");
+            }
         }
         Ok(())
     }
@@ -195,7 +218,6 @@ impl WhatsappManager {
         Ok(())
     }
     fn print_acks(&mut self) -> Result<()> {
-        self.cb_respond("Message receipts:".into());
         let now = Utc::now();
         let mut lines = vec![];
         for (mid, mss) in self.outgoing_messages.iter_mut() {
@@ -215,6 +237,11 @@ impl WhatsappManager {
                                summary, mss.destination.to_string(), delta.num_seconds(), al));
             lines.push(format!("  (message ID \x11{}\x0f)", mid));
         }
+        if lines.len() == 0 {
+            self.cb_respond("No outgoing messages.");
+            return Ok(());
+        }
+        self.cb_respond("Message receipts:");
         for line in lines {
             self.cb_respond(line);
         }
@@ -310,8 +337,8 @@ impl WhatsappManager {
         self.conn.connect_new();
         Ok(())
     }
-    fn cb_respond(&mut self, s: String) {
-        self.cb_tx.unbounded_send(ControlBotCommand::CommandResponse(s))
+    fn cb_respond<T: Into<String>>(&mut self, s: T) {
+        self.cb_tx.unbounded_send(ControlBotCommand::CommandResponse(s.into()))
             .unwrap();
     }
     fn on_qr(&mut self, qr: QrCode) -> Result<()> {
@@ -322,7 +349,7 @@ impl WhatsappManager {
             .save(&self.qr_path)?;
         let qrn = format!("Scan the QR code saved at {} to log in!", self.qr_path);
         self.cb_respond(qrn);
-        self.cb_respond(format!("NB: The code is only valid for a few seconds, so scan quickly!"));
+        self.cb_respond("NB: The code is only valid for a few seconds, so scan quickly!");
         Ok(())
     }
     fn send_message(&mut self, content: ChatMessageContent, jid: Jid) -> Result<()> {
@@ -331,7 +358,7 @@ impl WhatsappManager {
             ack_level: None,
             sent_ts: Utc::now(),
             content,
-            destination: jid,
+            destination: jid.clone(),
             alerted: false,
             alerted_pending: false
         };
@@ -343,6 +370,22 @@ impl WhatsappManager {
             warn!("Failed to store outgoing msgid {}: {}", mid.0, e);
         }
         self.outgoing_messages.insert(mid.0, mss);
+        if !jid.is_group && self.track_presence {
+            let mut update = true;
+            let now = Instant::now();
+            if let Some(inst) = self.presence_requests.get(&jid) {
+                // WhatsApp stops sending you presence updates after about 10 minutes.
+                // To avoid this, we resubscribe about every 5.
+                if now.duration_since(*inst) < Duration::new(300, 0) {
+                    update = false;
+                }
+            }
+            if update {
+                debug!("Requesting presence updates for {}", jid);
+                self.presence_requests.insert(jid.clone(), now);
+                self.outbox.push_back(WaRequest::SubscribePresence(jid));
+            }
+        }
         Ok(())
     }
     fn send_direct_message(&mut self, addr: PduAddress, content: String) -> Result<()> {
@@ -641,10 +684,10 @@ impl WhatsappManager {
             list.push(format!("- '{}' (jid {}) - {}", gmeta.name.as_ref().map(|x| x as &str).unwrap_or("<unnamed>"), jid, bstatus));
         }
         if list.len() == 0 {
-            self.cb_respond("no WhatsApp chats (yet?)".into());
+            self.cb_respond("no WhatsApp chats (yet?)");
         }
         else {
-            self.cb_respond("WhatsApp chats:".into());
+            self.cb_respond("WhatsApp chats:");
         }
         for item in list {
             self.cb_respond(item);
@@ -788,7 +831,7 @@ impl WhatsappManager {
     }
     fn group_associate_handler(&mut self, jid: Jid, chan: String) -> Result<()> {
         match self.group_associate(jid, chan, true) {
-            Ok(_) => self.cb_respond("Group creation successful.".into()),
+            Ok(_) => self.cb_respond("Group creation successful."),
             Err(e) => self.cb_respond(format!("Group creation failed: {}", e))
         }
         Ok(())
