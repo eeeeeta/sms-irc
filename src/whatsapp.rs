@@ -494,7 +494,7 @@ impl WhatsappManager {
                     Some(jid)
                 }
                 else {
-                    info!("Received self-message in a 1-to-1 chat, ignoring...");
+                    debug!("Received self-message in a 1-to-1 chat, ignoring...");
                     if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
                         warn!("Failed to store 1-to-1 msgid {}: {}", id.0, e);
                     }
@@ -518,10 +518,11 @@ impl WhatsappManager {
                 else {
                     if self.autocreate.is_some() {
                         info!("Attempting to autocreate channel for unbridged group {}...", gid);
-                        match self.group_autocreate_from_unbridged(gid) {
+                        match self.group_autocreate_from_unbridged(gid.clone()) {
                             Ok(id) => Some(id),
                             Err(e) => {
-                                warn!("Autocreation failed: {}", e);
+                                warn!("Autocreation failed: {} - requesting metadata instead", e);
+                                self.request_update_group(gid)?;
                                 return Ok(());
                             }
                         }
@@ -732,10 +733,21 @@ impl WhatsappManager {
     fn on_got_group_metadata(&mut self, grp: GroupMetadata) -> Result<()> {
         match self.store.get_group_by_jid_opt(&grp.id)? {
             Some(g) => {
-                info!("Got metadata for group '{}' (jid {}, id {})", grp.subject, grp.id.to_string(), g.id);
+                info!("Got metadata for group '{}' (jid {}, id {})", grp.subject, grp.id, g.id);
             },
             None => {
-                warn!("Got metadata for unbridged group '{}' (jid {})", grp.subject, grp.id.to_string());
+                warn!("Got metadata for unbridged group '{}' (jid {})", grp.subject, grp.id);
+                if self.autocreate.is_some() {
+                    match self.group_autocreate(grp.clone()) {
+                        Ok((id, chan)) => {
+                            self.cb_respond(format!("Automatically bridged new group '{}' to channel {} (id {})", grp.subject, chan, id));
+                        },
+                        Err(e) => {
+                            warn!("Autocreation failed for group {}: {}", grp.id, e);
+                            self.cb_respond(format!("Failed to autocreate new group {} - check logs for details.", grp.id));
+                        }
+                    }
+                }
             }
         }
         let mut participants = vec![];
