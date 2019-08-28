@@ -31,7 +31,6 @@ pub enum WhatsappCommand {
     GroupRemove(String),
     GroupUpdateAll,
     MediaFinished(MediaResult),
-    CheckAcks,
     PrintAcks,
     MakeContact(PduAddress),
     SubscribePresence(PduAddress)

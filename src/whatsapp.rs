@@ -5,7 +5,7 @@ use whatsappweb::Contact as WaContact;
 use whatsappweb::Chat as WaChat;
 use whatsappweb::GroupMetadata;
 use whatsappweb::message::ChatMessage as WaMessage;
-use whatsappweb::message::{ChatMessageContent, MessageId, Peer, MessageAckLevel};
+use whatsappweb::message::{ChatMessageContent, Peer};
 use whatsappweb::session::PersistentSession as WaPersistentSession;
 use whatsappweb::event::WaEvent;
 use whatsappweb::req::WaRequest;
@@ -19,48 +19,33 @@ use image::Luma;
 use qrcode::QrCode;
 use futures::{Future, Async, Poll, Stream, Sink};
 use failure::Error;
-use regex::{Regex, Captures};
 use chrono::prelude::*;
-use tokio_timer::Interval;
 use std::time::{Instant, Duration};
-use unicode_segmentation::UnicodeSegmentation;
 use std::collections::VecDeque;
 
 use crate::comm::{WhatsappCommand, ContactFactoryCommand, ControlBotCommand, InitParameters};
 use crate::util::{self, Result};
 use crate::models::Recipient;
-use crate::whatsapp_media::{MediaInfo, MediaResult};
+use crate::whatsapp_media::MediaResult;
 use crate::store::Store;
 use crate::whatsapp_conn::{WebConnectionWrapper, WebConnectionWrapperConfig};
+use crate::whatsapp_msg::{IncomingMessage, WaMessageProcessor};
+use crate::whatsapp_ack::WaAckTracker;
 
-struct MessageSendStatus {
-    ack_level: Option<MessageAckLevel>,
-    sent_ts: DateTime<Utc>,
-    content: ChatMessageContent,
-    destination: Jid,
-    alerted: bool,
-    alerted_pending: bool,
-}
 pub struct WhatsappManager {
     conn: WebConnectionWrapper,
     rx: UnboundedReceiver<WhatsappCommand>,
-    wa_tx: Arc<UnboundedSender<WhatsappCommand>>,
     cf_tx: UnboundedSender<ContactFactoryCommand>,
     cb_tx: UnboundedSender<ControlBotCommand>,
     contacts: HashMap<Jid, WaContact>,
     chats: HashMap<Jid, WaChat>,
     presence_requests: HashMap<Jid, Instant>,
-    outgoing_messages: HashMap<String, MessageSendStatus>,
-    ack_warn: u64,
-    ack_warn_pending: u64,
-    ack_expiry: u64,
-    ack_resend: Option<u64>,
+    msgproc: WaMessageProcessor,
+    ackp: WaAckTracker,
     backlog_start: Option<chrono::NaiveDateTime>,
     connected: bool,
     store: Store,
     qr_path: String,
-    media_path: String,
-    dl_path: String,
     autocreate: Option<String>,
     autoupdate_nicks: bool,
     mark_read: bool,
@@ -108,12 +93,14 @@ impl Future for WhatsappManager {
                 self.conn.poll_complete()?;
             }
         }
+        self.ackp.poll()?;
         Ok(Async::NotReady)
     }
 }
 impl WhatsappManager {
     pub fn new<T>(p: InitParameters<T>) -> Self {
-        let store = p.store;
+        let ackp = WaAckTracker::new(&p);
+        let store = p.store.clone();
         let wa_tx = p.cm.wa_tx.clone();
         let rx = p.cm.wa_rx.take().unwrap();
         let cf_tx = p.cm.cf_tx.clone();
@@ -122,48 +109,33 @@ impl WhatsappManager {
         let qr_path = format!("{}/qr.png", media_path);
         let dl_path = p.cfg.whatsapp.dl_path.clone().unwrap_or("file:///tmp/wa_media".into());
         let autocreate = p.cfg.whatsapp.autocreate_prefix.clone();
-        let ack_ivl = p.cfg.whatsapp.ack_check_interval.unwrap_or(10);
-        let ack_warn_ms = p.cfg.whatsapp.ack_warn_ms.unwrap_or(5000);
-        let ack_warn_pending_ms = p.cfg.whatsapp.ack_warn_pending_ms.unwrap_or(ack_warn_ms * 2);
-        let ack_expiry_ms = p.cfg.whatsapp.ack_expiry_ms.unwrap_or(60000);
-        let ack_resend_ms = p.cfg.whatsapp.ack_resend_ms.clone();
         let backlog_start = p.cfg.whatsapp.backlog_start.clone();
         let mark_read = p.cfg.whatsapp.mark_read;
         let autoupdate_nicks = p.cfg.whatsapp.autoupdate_nicks;
         let backoff_time_ms = p.cfg.whatsapp.backoff_time_ms.unwrap_or(10000);
         let track_presence = p.cfg.whatsapp.track_presence;
+
         wa_tx.unbounded_send(WhatsappCommand::LogonIfSaved)
             .unwrap();
+
         let wa_tx = Arc::new(wa_tx);
-        let ivl_tx = wa_tx.clone();
-        let timer = Interval::new(Instant::now(), Duration::new(ack_ivl, 0))
-            .map_err(|e| {
-                error!("Message ack timer failed: {}", e);
-                panic!("timer failed!");
-            }).for_each(move |_| {
-                ivl_tx.unbounded_send(WhatsappCommand::CheckAcks).unwrap();
-                Ok(())
-            });
-        p.hdl.spawn(timer);
+        let msgproc = WaMessageProcessor { store: store.clone(), media_path, dl_path, wa_tx };
+
         let conn = WebConnectionWrapper::new(WebConnectionWrapperConfig {
             backoff_time_ms
         });
+
         Self {
             conn,
             contacts: HashMap::new(),
             chats: HashMap::new(),
-            outgoing_messages: HashMap::new(),
             connected: false,
             our_jid: None,
             presence_requests: HashMap::new(),
-            ack_warn: ack_warn_ms,
-            ack_warn_pending: ack_warn_pending_ms,
-            ack_expiry: ack_expiry_ms,
-            ack_resend: ack_resend_ms,
             outbox: VecDeque::new(),
-            wa_tx, backlog_start,
-            rx, cf_tx, cb_tx, qr_path, store, media_path, dl_path, autocreate,
-            mark_read, autoupdate_nicks, track_presence
+            backlog_start,
+            rx, cf_tx, cb_tx, qr_path, store, msgproc, autocreate,
+            mark_read, autoupdate_nicks, track_presence, ackp
         }
     }
     fn handle_int_rx(&mut self, c: WhatsappCommand) -> Result<()> {
@@ -179,7 +151,6 @@ impl WhatsappManager {
             GroupUpdateAll => self.group_update_all()?,
             GroupRemove(grp) => self.group_remove(grp)?,
             MediaFinished(r) => self.media_finished(r)?,
-            CheckAcks => self.check_acks()?,
             PrintAcks => self.print_acks()?,
             MakeContact(a) => self.make_contact(a)?,
             SubscribePresence(a) => self.subscribe_presence(a)?
@@ -218,84 +189,11 @@ impl WhatsappManager {
         Ok(())
     }
     fn print_acks(&mut self) -> Result<()> {
-        let now = Utc::now();
-        let mut lines = vec![];
-        for (mid, mss) in self.outgoing_messages.iter_mut() {
-            let delta = now - mss.sent_ts;
-            let mut summary = mss.content.quoted_description();
-            if summary.len() > 15 {
-                summary = summary.graphemes(true)
-                    .take(10)
-                    .chain(std::iter::once("…"))
-                    .collect();
-            }
-            let al: std::borrow::Cow<str> = match mss.ack_level {
-                Some(al) => format!("{:?}", al).into(),
-                None => "undelivered".into()
-            };
-            lines.push(format!("- \"\x1d{}\x1d\" to \x02{}\x02 ({}s ago) is \x02{:?}\x02", 
-                               summary, mss.destination.to_string(), delta.num_seconds(), al));
-            lines.push(format!("  (message ID \x11{}\x0f)", mid));
-        }
-        if lines.len() == 0 {
-            self.cb_respond("No outgoing messages.");
-            return Ok(());
-        }
-        self.cb_respond("Message receipts:");
-        for line in lines {
+        for line in self.ackp.print_acks() {
             self.cb_respond(line);
         }
         Ok(())
-    }
-    fn check_acks(&mut self) -> Result<()> {
-        trace!("Checking acks");
-        let now = Utc::now();
-        let mut to_resend = vec![];
-        for (mid, mss) in self.outgoing_messages.iter_mut() {
-            let delta = now - mss.sent_ts;
-            let delta_ms = delta.num_milliseconds() as u64;
-            if mss.ack_level.is_none() {
-                if delta_ms >= self.ack_warn && !mss.alerted {
-                    warn!("Message {} has been un-acked for {} seconds!", mid, delta.num_seconds());
-                    self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Sending message ID {} seems to have failed!", mid)))
-                        .unwrap();
-                    mss.alerted = true;
-                }
-                if let Some(rs) = self.ack_resend {
-                    if delta_ms >= rs {
-                        to_resend.push(mid.clone());
-                    }
-                }
-            }
-            if let Some(MessageAckLevel::PendingSend) = mss.ack_level {
-                if delta_ms >= self.ack_warn_pending && !mss.alerted_pending {
-                    warn!("Message {} has been pending for {} seconds!", mid, delta.num_seconds());
-                    self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Sending message ID {} is still pending. Is WhatsApp running and connected?", mid)))
-                        .unwrap();
-                    self.cb_tx.unbounded_send(ControlBotCommand::CommandResponse("For more information on pending outgoing messages, try the \x02WHATSAPP RECEIPTS\x02 command.".into()))
-                        .unwrap();
-                    mss.alerted_pending = true;
-                }
-            }
-        }
-        for mid in to_resend {
-            let mss = self.outgoing_messages.remove(&mid).unwrap();
-            warn!("Resending un-acked message {} (!)", mid);
-            self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Warning: Resending message with ID {}", mid)))
-                .unwrap();
-            self.send_message(mss.content, mss.destination)?;
-        }
-        let ack_expiry = self.ack_expiry;
-        self.outgoing_messages.retain(|_, m| {
-            if let Some(MessageAckLevel::PendingSend) | None = m.ack_level {
-                // Always retain the failures, so the user knows what happened with them (!)
-                return true;
-            }
-            let diff_ms = (now - m.sent_ts).num_milliseconds() as u64;
-            diff_ms < ack_expiry
-        });
-        Ok(())
-    }
+    } 
     fn media_finished(&mut self, r: MediaResult) -> Result<()> {
         match r.result {
             Ok(ret) => {
@@ -309,9 +207,7 @@ impl WhatsappManager {
                 self.store_message(&r.from, msg, r.group, r.ts)?;
             }
         }
-        if let Err(e) = self.store.store_wa_msgid(r.mi.0.clone()) {
-            warn!("Failed to store WA msgid {} after media download: {}", r.mi.0, e);
-        }
+        self.store.store_wa_msgid(r.mi.0.clone())?;
         if self.mark_read {
             if let Some(p) = r.peer {
                 self.outbox.push_back(WaRequest::MessageRead {
@@ -354,26 +250,15 @@ impl WhatsappManager {
     }
     fn send_message(&mut self, content: ChatMessageContent, jid: Jid) -> Result<()> {
         let (c, j) = (content.clone(), jid.clone());
-        let mss = MessageSendStatus {
-            ack_level: None,
-            sent_ts: Utc::now(),
-            content,
-            destination: jid.clone(),
-            alerted: false,
-            alerted_pending: false
-        };
-        let m = WaMessage::new(j, c);
-        let mid = m.id.clone();
+        let m = WaMessage::new(jid, content);
+        debug!("Send to {}: message ID {}", j, m.id.0);
+        self.store.store_wa_msgid(m.id.0.clone())?;
+        self.ackp.register_send(j.clone(), c, m.id.0.clone());
         self.outbox.push_back(WaRequest::SendMessage(m));
-        debug!("Send to {}: message ID {}", mss.destination.to_string(), mid.0);
-        if let Err(e) = self.store.store_wa_msgid(mid.0.clone()) {
-            warn!("Failed to store outgoing msgid {}: {}", mid.0, e);
-        }
-        self.outgoing_messages.insert(mid.0, mss);
-        if !jid.is_group && self.track_presence {
+        if !j.is_group && self.track_presence {
             let mut update = true;
             let now = Instant::now();
-            if let Some(inst) = self.presence_requests.get(&jid) {
+            if let Some(inst) = self.presence_requests.get(&j) {
                 // WhatsApp stops sending you presence updates after about 10 minutes.
                 // To avoid this, we resubscribe about every 5.
                 if now.duration_since(*inst) < Duration::new(300, 0) {
@@ -381,9 +266,9 @@ impl WhatsappManager {
                 }
             }
             if update {
-                debug!("Requesting presence updates for {}", jid);
-                self.presence_requests.insert(jid.clone(), now);
-                self.outbox.push_back(WaRequest::SubscribePresence(jid));
+                debug!("Requesting presence updates for {}", j);
+                self.presence_requests.insert(j.clone(), now);
+                self.outbox.push_back(WaRequest::SubscribePresence(j));
             }
         }
         Ok(())
@@ -428,38 +313,7 @@ impl WhatsappManager {
             error!("Tried to send WA message to nonexistent group {}", chan);
         }
         Ok(())
-    }
-    fn process_message<'a>(&mut self, msg: &'a str) -> String {
-        lazy_static! {
-            static ref BOLD_RE: Regex = Regex::new(r#"\*([^\*]+)\*"#).unwrap();
-            static ref ITALICS_RE: Regex = Regex::new(r#"_([^_]+)_"#).unwrap();
-            static ref MENTIONS_RE: Regex = Regex::new(r#"@(\d+)"#).unwrap();
-        }
-        let emboldened = BOLD_RE.replace_all(msg, "\x02$1\x02");
-        let italicised = ITALICS_RE.replace_all(&emboldened, "\x1D$1\x1D");
-        let store = &mut self.store;
-        let ret = MENTIONS_RE.replace_all(&italicised, |caps: &Captures| {
-            let pdua: PduAddress = caps[0].replace("@", "+").parse().unwrap();
-            match store.get_recipient_by_addr_opt(&pdua) {
-                Ok(Some(recip)) => recip.nick,
-                Ok(None) => format!("<+{}>", &caps[1]),
-                Err(e) => {
-                    warn!("Error searching for mention recipient: {}", e);
-                    format!("@{}", &caps[1])
-                }
-            }
-        });
-        ret.to_string()
-    }
-    fn jid_to_nick(&mut self, jid: &Jid) -> Result<Option<String>> {
-        if let Some(num) = jid.phonenumber() {
-            if let Ok(pdua) = num.parse() {
-                return Ok(self.store.get_recipient_by_addr_opt(&pdua)?
-                    .map(|x| x.nick));
-            }
-        }
-        Ok(None)
-    }
+    } 
     fn on_message(&mut self, msg: WaMessage, is_new: bool) -> Result<()> {
         use whatsappweb::message::{Direction};
 
@@ -495,9 +349,7 @@ impl WhatsappManager {
                 }
                 else {
                     debug!("Received self-message in a 1-to-1 chat, ignoring...");
-                    if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
-                        warn!("Failed to store 1-to-1 msgid {}: {}", id.0, e);
-                    }
+                    self.store.store_wa_msgid(id.0.clone())?;
                     return Ok(());
                 };
                 (ojid, group) 
@@ -535,95 +387,18 @@ impl WhatsappManager {
             },
             None => None
         };
-        let mut is_media = false;
-        let text = match content {
-            ChatMessageContent::Text(s) => self.process_message(&s),
-            ChatMessageContent::Unimplemented(mut det) => {
-                if det.trim() == "" {
-                    debug!("Discarding empty unimplemented message.");
-                    return Ok(());
-                }
-                if det.len() > 128 {
-                    det = det.graphemes(true)
-                        .take(128)
-                        .chain(std::iter::once("…"))
-                        .collect();
-                }
-                format!("[\x02\x0304unimplemented\x0f] {}", det)
-            },
-            ChatMessageContent::LiveLocation { lat, long, speed, .. } => {
-                // FIXME: use write!() maybe
-                let spd = if let Some(s) = speed {
-                    format!("travelling at {:.02} m/s - https://google.com/maps?q={},{}", s, lat, long)
-                }
-                else {
-                    format!("broadcasting live location - https://google.com/maps?q={},{}", lat, long)
-                };
-                format!("\x01ACTION is {}\x01", spd)
-            },
-            ChatMessageContent::Location { lat, long, name, .. } => {
-                let place = if let Some(n) = name {
-                    format!("at '{}'", n)
-                }
-                else {
-                    "somewhere".into()
-                };
-                format!("\x01ACTION is {} - https://google.com/maps?q={},{}\x01", place, lat, long)
-            },
-            ChatMessageContent::Redaction { mid } => {
-                // TODO: make this more useful
-                format!("\x01ACTION redacted message ID \x11{}\x11\x01", mid.0)
-            },
-            ChatMessageContent::Contact { display_name, vcard } => {
-                match crate::whatsapp_media::store_contact(&self.media_path, &self.dl_path, vcard) {
-                    Ok(link) => {
-                        format!("\x01ACTION uploaded a contact for '{}' - {}\x01", display_name, link)
-                    },
-                    Err(e) => {
-                        warn!("Failed to save contact card: {}", e);
-                        format!("\x01ACTION uploaded a contact for '{}' (couldn't download)\x01", display_name)
-                    }
-                }
-            },
-            mut x @ ChatMessageContent::Image { .. } |
-                mut x @ ChatMessageContent::Video { .. } |
-                mut x @ ChatMessageContent::Audio { .. } |
-                mut x @ ChatMessageContent::Document { .. } => {
-                    let capt = x.take_caption();
-                    self.process_media(id.clone(), peer.clone(), from.clone(), group, x, msg.time)?;
-                    is_media = true;
-                    if let Some(c) = capt {
-                        c
-                    }
-                    else {
-                        return Ok(());
-                    }
-                }
+        let inc = IncomingMessage { 
+            id: id.clone(),
+            peer: peer.clone(),
+            ts: msg.time,
+            from, group, content, quoted
         };
-        if let Some(qm) = quoted {
-            let nick = if group.is_some() {
-                let nick = self.jid_to_nick(&qm.participant)?
-                    .unwrap_or(qm.participant.to_string());
-                format!("<{}> ", nick)
-            }
-            else {
-                String::new()
-            };
-            let mut message = qm.content.quoted_description();
-            if message.len() > 128 {
-                message = message.graphemes(true)
-                    .take(128)
-                    .chain(std::iter::once("…"))
-                    .collect();
-            }
-            let quote = format!("\x0315> \x1d{}{}", nick, message);
-            self.store_message(&from, &quote, group, msg.time)?;
+        let (msgs, is_media) = self.msgproc.process_wa_incoming(inc)?;
+        for msg in msgs {
+            self.store_message(&msg.from, &msg.text, msg.group, msg.ts)?;
         }
-        self.store_message(&from, &text, group, msg.time)?;
         if !is_media {
-            if let Err(e) = self.store.store_wa_msgid(id.0.clone()) {
-                warn!("Failed to store received msgid {}: {}", id.0, e);
-            }
+            self.store.store_wa_msgid(id.0.clone())?;
         }
         if let Some(p) = peer {
             if !is_media && !is_ours && self.mark_read {
@@ -646,28 +421,7 @@ impl WhatsappManager {
             warn!("couldn't make address for jid {}", from.to_string());
         }
         Ok(())
-    }
-    fn process_media(&mut self, id: MessageId, peer: Option<Peer>, from: Jid, group: Option<i32>, ct: ChatMessageContent, ts: NaiveDateTime) -> Result<()> {
-        use whatsappweb::MediaType;
-
-        let (ty, fi, name) = match ct {
-            ChatMessageContent::Image { info, .. } => (MediaType::Image, info, None),
-            ChatMessageContent::Video { info, .. } => (MediaType::Video, info, None),
-            ChatMessageContent::Audio { info, .. } => (MediaType::Audio, info, None),
-            ChatMessageContent::Document { info, filename } => (MediaType::Document, info, Some(filename)),
-            _ => unreachable!()
-        };
-        let mi = MediaInfo {
-            ty, fi, name, peer, ts,
-            mi: id,
-            from, group,
-            path: self.media_path.clone(),
-            dl_path: self.dl_path.clone(),
-            tx: self.wa_tx.clone()
-        };
-        mi.start();
-        Ok(())
-    }
+    } 
     fn group_list(&mut self) -> Result<()> {
         let mut list = vec![];
         for (jid, gmeta) in self.chats.iter() {
@@ -928,7 +682,7 @@ impl WhatsappManager {
             SessionEstablished { jid, persistent } => self.on_established(jid, persistent)?,
             Message { is_new, msg } => self.on_message(msg, is_new)?,
             InitialContacts(cts) => {
-                info!("Received initial contact list");
+                debug!("Received initial contact list");
                 for ct in cts {
                     self.on_contact_change(ct)?;
                 }
@@ -948,7 +702,7 @@ impl WhatsappManager {
                 //self.contacts.remove(&jid);
             },
             InitialChats(cts) => {
-                info!("Received initial chat list");
+                debug!("Received initial chat list");
                 for ct in cts {
                     self.chats.insert(ct.jid.clone(), ct);
                 }
@@ -989,13 +743,7 @@ impl WhatsappManager {
                 }
             },
             MessageAck(ack) => {
-                if let Some(mss) = self.outgoing_messages.get_mut(&ack.id.0) {
-                    debug!("Ack known message {} at level: {:?}", ack.id.0, ack.level);
-                    mss.ack_level = Some(ack.level);
-                }
-                else {
-                    debug!("Ack unknown message {} at level: {:?}", ack.id.0, ack.level);
-                }
+                self.ackp.on_message_ack(ack);
             },
             GroupIntroduce { newly_created, meta, .. } => {
                 let is_new = if newly_created { " newly created" } else { "" };

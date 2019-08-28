@@ -139,6 +139,8 @@ impl Store {
 
         ::diesel::insert_into(wa_msgids::table)
             .values(&new)
+            .on_conflict(wa_msgids::dsl::mid)
+            .do_nothing()
             .execute(&*conn)?;
         Ok(())
     }
