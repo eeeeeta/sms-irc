@@ -54,7 +54,9 @@ pub trait Sender {
                 }
             });
             for chunk in iter {
-                self.send_irc_message(from_nick, &dest, chunk)?;
+                if chunk.len() > 0 {
+                    self.send_irc_message(from_nick, &dest, chunk)?;
+                }
             }
         }
         Ok(())

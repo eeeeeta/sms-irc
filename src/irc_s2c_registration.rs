@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 use crate::util::Result;
 use crate::irc_s2c_v3::{IrcCap, SUPPORTED_CAPS};
 use crate::irc_s2c::{IrcConnection, SERVER_NAME};
+use crate::store::Store;
 
 pub struct RegistrationInformation {
     pub nick: String,
@@ -28,13 +29,14 @@ struct PendingIrcConnection {
     realname: Option<String>,
     caps: Vec<IrcCap>,
     outbox: Vec<Message>,
+    store: Store,
     new: bool
 }
 pub struct PendingIrcConnectionWrapper {
     inner: Option<PendingIrcConnection>
 }
 impl PendingIrcConnectionWrapper {
-    pub fn from_incoming(ts: TcpStream, sa: SocketAddr) -> Result<Self> {
+    pub fn from_incoming(ts: TcpStream, sa: SocketAddr, store: Store) -> Result<Self> {
         let codec = IrcCodec::new("utf8")?;
         let ic = PendingIrcConnection {
             sock: Framed::new(ts, codec),
@@ -45,6 +47,7 @@ impl PendingIrcConnectionWrapper {
             realname: None,
             caps: vec![],
             outbox: vec![],
+            store,
             new: true
         };
         Ok(Self { inner: Some(ic) })
@@ -77,7 +80,7 @@ impl Future for PendingIrcConnectionWrapper {
                 realname: conn.realname.unwrap(),
                 caps: conn.caps
             };
-            let ret = IrcConnection::from_pending(conn.sock, conn.addr, reginfo);
+            let ret = IrcConnection::from_pending(conn.sock, conn.addr, conn.store, reginfo);
             Ok(Async::Ready(ret))
         }
         else {

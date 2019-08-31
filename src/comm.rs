@@ -57,6 +57,7 @@ pub enum ContactManagerCommand {
     ChangeNick(String),
     SetWhatsapp(bool)
 }
+#[derive(Clone)]
 pub enum ControlBotCommand {
     Log(String),
     ReportFailure(String),

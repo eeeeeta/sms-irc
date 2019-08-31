@@ -222,6 +222,15 @@ impl Store {
             .optional()?;
         Ok(res)
     }
+    pub fn get_recipient_by_nick_opt(&mut self, n: &str) -> Result<Option<Recipient>> {
+        use crate::schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+
+        let res = recipients.filter(nick.eq(n))
+            .first(&*conn)
+            .optional()?;
+        Ok(res)
+    }
     pub fn get_recipient_by_addr_opt(&mut self, addr: &PduAddress) -> Result<Option<Recipient>> {
         use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
