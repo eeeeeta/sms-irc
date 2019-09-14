@@ -12,15 +12,17 @@ use futures::{Future, Async, Poll, Stream, Sink, self};
 use failure::{Error, format_err};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::collections::VecDeque;
+use std::collections::HashMap;
 use huawei_modem::pdu::DeliverPdu;
 
-use crate::util::{Result, self};
+use crate::util::Result;
 use crate::sender_common::Sender;
 use crate::irc_s2c_registration::{PendingIrcConnectionWrapper, RegistrationInformation};
 use crate::config::IrcServerConfig;
 use crate::comm::InitParameters;
 use crate::models::Group;
 use crate::comm::*;
+use crate::control_common::ControlCommon;
 use crate::store::Store;
 
 pub static SERVER_NAME: &str = "sms-irc.";
@@ -41,9 +43,11 @@ pub struct IrcConnection {
     reginfo: RegistrationInformation,
     outbox: Vec<Message>,
     store: Store,
-    joined_groups: Vec<Group>,
+    /// map from channel name to group info
+    joined_groups: HashMap<String, Group>,
     wa_outbox: VecDeque<WhatsappCommand>,
     m_outbox: VecDeque<ModemCommand>,
+    cf_outbox: VecDeque<ContactFactoryCommand>,
     new: bool
 }
 
@@ -184,9 +188,10 @@ impl IrcConnection {
         Self {
             sock, addr, reginfo, store,
             outbox: vec![],
-            joined_groups: vec![],
+            joined_groups: HashMap::new(),
             wa_outbox: VecDeque::new(),
             m_outbox: VecDeque::new(),
+            cf_outbox: VecDeque::new(),
             new: true
         }
     }
@@ -201,7 +206,7 @@ impl IrcConnection {
                 self.reply_s2c("PRIVMSG", vec![], Some(&thing as &str))?;
             },
             CommandResponse(thing) => {
-                self.reply_s2c("NOTICE", vec![], Some(&thing as &str))?;
+                self.outbox.push(Message::new(Some("root"), "PRIVMSG", vec!["&smsirc"], Some(&thing))?);
             },
             ProcessGroups => {}
         }
@@ -245,8 +250,7 @@ impl IrcConnection {
 
         for msg in self.store.get_all_messages()? {
             debug!("Processing message #{}", msg.id);
-            let addr = util::un_normalize_address(&msg.phone_number)
-                .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
+            let addr = msg.get_addr()?;
             let recip = match self.store.get_recipient_by_addr_opt(&addr)? {
                 Some(r) => r,
                 None => {
@@ -289,8 +293,7 @@ impl IrcConnection {
             self.reply_s2c("353", vec!["@", &grp.channel], Some(&nicks as &str))?;
         }
         self.reply_s2c("366", vec![&grp.channel], Some("End of /NAMES list."))?;
-        self.reply_s2c("324", vec![&grp.channel, "+nt"], None)?;
-        self.joined_groups.push(grp);
+        self.joined_groups.insert(grp.channel.clone(), grp);
         Ok(())
     }
     fn setup_control_channel(&mut self) -> Result<()> {
@@ -328,22 +331,32 @@ impl IrcConnection {
                 self.reply_from_user("NICK", vec![&new], None)?;
                 self.reginfo.nick = new;
             },
-            Command::JOIN(chan, _, _) => {
-                self.reply_s2c("405", vec![&chan], Some("You may not manually /JOIN channels in this alpha version."))?;
+            Command::JOIN(_, _, _) => {
+                // Just ignore /JOIN requests at present, since we autojoin.
             },
             Command::PART(chan, _) => {
                 // This is ERR_NOTONCHANNEL, which isn't amazing.
-                self.reply_s2c("442", vec![&chan], Some("You may not manually /PART channels in this alpha version."))?;
+                self.reply_s2c("442", vec![&chan], Some("You may not part."))?;
+            },
+            Command::ChannelMODE(target, modes) => {
+                if modes.len() > 0 {
+                    self.reply_s2c("482", vec![&target], Some("You may not alter channel modes."))?;
+                }
+                else {
+                    self.reply_s2c("324", vec![&target, "+nt"], None)?;
+                }
             },
             Command::PRIVMSG(target, msg) => {
-                if target.starts_with("#") {
+                if target == "&smsirc" {
+                    self.process_admin_command(msg)?;
+                }
+                else if target.starts_with("#") {
                     // FIXME: check the channel actually exists
                     self.wa_outbox.push_back(WhatsappCommand::SendGroupMessage(target, msg));
                 }
                 else {
                     if let Some(recip) = self.store.get_recipient_by_nick_opt(&target)? { 
-                        let addr = util::un_normalize_address(&recip.phone_number)
-                            .ok_or(format_err!("unnormalizable addr"))?;
+                        let addr = recip.get_addr()?;
                         if recip.whatsapp {
                             self.wa_outbox.push_back(WhatsappCommand::SendDirectMessage(addr, msg));
                         }
@@ -368,6 +381,21 @@ impl IrcConnection {
     }
 }
 
+impl ControlCommon for IrcConnection {
+    fn cf_send(&mut self, c: ContactFactoryCommand) {
+        self.cf_outbox.push_back(c);
+    }
+    fn wa_send(&mut self, c: WhatsappCommand) { 
+        self.wa_outbox.push_back(c);
+    }
+    fn m_send(&mut self, c: ModemCommand) {
+        self.m_outbox.push_back(c);
+    }
+    fn control_response(&mut self, msg: &str) -> Result<()> {
+        self.outbox.push(Message::new(Some("root"), "PRIVMSG", vec!["&smsirc"], Some(msg))?);
+        Ok(())
+    }
+}
 impl Sender for IrcConnection {
     fn report_error(&mut self, from_nick: &str, err: String) -> Result<()> {
         self.reply_from_nick(from_nick, "NOTICE", vec![&self.reginfo.nick.clone()], Some(&err as &str))?;

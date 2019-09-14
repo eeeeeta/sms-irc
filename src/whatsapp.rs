@@ -449,17 +449,24 @@ impl WhatsappManager {
         }
         Ok(())
     }
-    fn get_contact_notify_for_jid(&mut self, jid: &Jid) -> Option<&str> {
-        let mut notify: Option<&str> = None;
+    fn get_nick_for_jid(&mut self, jid: &Jid) -> Result<(String, i32)> {
         if let Some(ct) = self.contacts.get(jid) {
             if let Some(ref name) = ct.name {
-                notify = Some(name);
+                let nick = util::string_to_irc_nick(&name);
+                return Ok((nick, Recipient::NICKSRC_WA_CONTACT));
             }
             else if let Some(ref name) = ct.notify {
-                notify = Some(name);
+                let nick = util::string_to_irc_nick(&name);
+                return Ok((nick, Recipient::NICKSRC_WA_NOTIFY));
             }
         }
-        notify
+        let addr = match util::jid_to_address(jid) {
+            Some(a) => a,
+            None => {
+                return Err(format_err!("couldn't translate jid {} to address", jid));
+            }
+        };
+        Ok((util::make_nick_for_address(&addr), Recipient::NICKSRC_AUTO))
     }
     fn get_wa_recipient(&mut self, jid: &Jid) -> Result<Recipient> {
         let addr = match util::jid_to_address(jid) {
@@ -472,13 +479,10 @@ impl WhatsappManager {
             Ok(recip)
         }
         else {
-            let notify = self.get_contact_notify_for_jid(jid).map(|x| x.to_string());
-            let nick = match notify {
-                Some(ref n) => util::string_to_irc_nick(n),
-                None => util::make_nick_for_address(&addr)
-            };
-            info!("Creating new WA recipient for {} (nick {})", addr, nick);
-            let ret = self.store.store_wa_recipient(&addr, &nick, notify.as_ref().map(|x| x as &str))?;
+            let (nick, nicksrc) = self.get_nick_for_jid(jid)?;
+            info!("Creating new WA recipient for {} (nick {}, src {})", addr, nick, nicksrc);
+            let notify = self.contacts.get(jid).and_then(|x| x.notify.as_ref().map(|x| x as &str));
+            let ret = self.store.store_wa_recipient(&addr, &nick, notify, nicksrc)?;
             self.cf_tx.unbounded_send(ContactFactoryCommand::SetupContact(addr.clone()))
                 .unwrap();
             Ok(ret)
@@ -650,25 +654,29 @@ impl WhatsappManager {
     fn on_contact_change(&mut self, ct: WaContact) -> Result<()> {
         let jid = ct.jid.clone();
         if let Some(addr) = util::jid_to_address(&jid) {
-            let old_notify = self.get_contact_notify_for_jid(&jid).map(|x| x.to_string());
             self.contacts.insert(ct.jid.clone(), ct);
             let recip = self.get_wa_recipient(&jid)?;
-            let notify = self.get_contact_notify_for_jid(&jid).map(|x| x.to_string());
-            if old_notify != notify {
-                debug!("Notify changed for recipient {}: it's now {:?}", recip.nick, notify);
-                self.store.update_recipient_notify(&addr, notify.as_ref().map(|x| x as &str))?;
-                if self.autoupdate_nicks && old_notify.is_none() {
-                    if let Some(n) = notify {
-                        let nick = util::string_to_irc_nick(&n);
-                        info!("Automatically updating nick for {} to {}", addr, nick);
-                        self.store.update_recipient_nick(&addr, &nick)?;
-                        let cmd = ContactFactoryCommand::ForwardCommand(
-                            addr,
-                            crate::comm::ContactManagerCommand::ChangeNick(nick)
-                            );
-                        self.cf_tx.unbounded_send(cmd)
-                            .unwrap();
-                    }
+            let (new_nick, newsrc) = self.get_nick_for_jid(&jid)?;
+            let notify = self.contacts.get(&jid).and_then(|x| x.notify.as_ref().map(|x| x as &str));
+            if notify.is_some() {
+                self.store.update_recipient_notify(&addr, notify)?;
+            }
+            if recip.nick != new_nick {
+                debug!("New nick '{}' (src {}) for recipient {} (from '{}', src {})", new_nick, newsrc, addr, recip.nick, recip.nicksrc);
+                let should_update = match (recip.nicksrc, newsrc) {
+                    (Recipient::NICKSRC_MIGRATED, _) => true,
+                    (Recipient::NICKSRC_AUTO, _) => true,
+                    (Recipient::NICKSRC_WA_NOTIFY, Recipient::NICKSRC_WA_CONTACT) => true,
+                    _ => false
+                };
+                if should_update && self.autoupdate_nicks {
+                    info!("Automatically updating nick for {} to {}", addr, new_nick);
+                    let cmd = ContactFactoryCommand::ForwardCommand(
+                        addr,
+                        crate::comm::ContactManagerCommand::ChangeNick(new_nick, newsrc)
+                        );
+                    self.cf_tx.unbounded_send(cmd)
+                        .unwrap();
                 }
             }
         }

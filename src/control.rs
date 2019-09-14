@@ -61,14 +61,17 @@ impl Future for ControlBot {
     }
 }
 impl ControlCommon for ControlBot {
-    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> {
-        &mut self.wa_tx
+    fn cf_send(&mut self, c: ContactFactoryCommand) {
+        self.cf_tx.unbounded_send(c)
+            .unwrap()
     }
-    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand> {
-        &mut self.cf_tx
+    fn wa_send(&mut self, c: WhatsappCommand) { 
+        self.wa_tx.unbounded_send(c)
+            .unwrap()
     }
-    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> {
-        &mut self.m_tx
+    fn m_send(&mut self, c: ModemCommand) {
+        self.m_tx.unbounded_send(c)
+            .unwrap()
     }
     fn control_response(&mut self, msg: &str) -> Result<()> {
         self.irc.0.send_notice(&self.admin, msg)?;

@@ -163,8 +163,8 @@ impl ContactManager {
                 self.presence = msg;
                 self.update_away()?;
             },
-            ChangeNick(nick) => {
-                self.change_nick(nick)?;
+            ChangeNick(nick, src) => {
+                self.change_nick(nick, src)?;
             },
             SetWhatsapp(wam) => {
                 self.wa_mode = wam;
@@ -173,9 +173,9 @@ impl ContactManager {
         }
         Ok(())
     }
-    fn change_nick(&mut self, nick: String) -> Result<()> {
-        info!("Contact {} changing nick to {}", self.nick, nick);
-        self.store.update_recipient_nick(&self.addr, &nick)?;
+    fn change_nick(&mut self, nick: String, src: i32) -> Result<()> {
+        debug!("Contact {} changing nick to {}", self.nick, nick);
+        self.store.update_recipient_nick(&self.addr, &nick, src)?;
         self.irc.0.send(Command::NICK(nick))?;
         Ok(())
     }
@@ -271,8 +271,7 @@ impl ContactManager {
     pub fn new(recip: Recipient, p: InitParameters<IrcClientConfig>) -> impl Future<Item = Self, Error = Error> {
         let store = p.store;
         let wa_mode = recip.whatsapp;
-        let addr = match util::un_normalize_address(&recip.phone_number)
-            .ok_or(format_err!("invalid num {} in db", recip.phone_number)) {
+        let addr = match recip.get_addr() {
             Ok(r) => r,
             Err(e) => return Either::B(futures::future::err(e.into()))
         };

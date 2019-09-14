@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use tokio_core::reactor::Handle;
 use huawei_modem::pdu::PduAddress;
 use crate::contact::ContactManager;
-use crate::util::{self, Result};
+use crate::util::Result;
 use crate::models::Recipient;
 use tokio_timer::Interval;
 use failure::Error;
@@ -201,8 +201,7 @@ impl ContactFactory {
     fn process_messages(&mut self) -> Result<()> {
         for msg in self.store.get_all_messages()? {
             if self.messages_processed.insert(msg.id) {
-                let addr = util::un_normalize_address(&msg.phone_number)
-                    .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
+                let addr = msg.get_addr()?;
                 if self.contacts_starting.get(&addr).is_some() {
                     continue;
                 }

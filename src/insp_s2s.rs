@@ -13,7 +13,7 @@ use huawei_modem::pdu::{PduAddress, DeliverPdu};
 use std::collections::{HashSet, HashMap};
 use failure::Error;
 use crate::models::Recipient;
-use crate::util::{self, Result};
+use crate::util::Result;
 use crate::contact_common::ContactManagerManager;
 use crate::sender_common::Sender;
 use crate::control_common::ControlCommon;
@@ -97,7 +97,14 @@ impl ContactManagerManager for InspLink {
     fn setup_contact_for(&mut self, recip: Recipient, addr: PduAddress) -> Result<()> {
         trace!("setting up contact for recip #{}: {}", recip.id, addr);
         let host = self.host_for_wa(recip.whatsapp);
-        let user = InspUser::new_from_recipient(addr.clone(), recip.nick, &host);
+        let nick = match self.check_nick_for_collisions(&recip.nick) {
+            Some(n) => {
+                self.store.update_recipient_nick(&addr, &n, Recipient::NICKSRC_COLLISION)?;
+                n
+            },
+            None => recip.nick
+        };
+        let user = InspUser::new_from_recipient(addr.clone(), nick, &host);
         let uuid = self.new_user(user)?;
         self.contacts.insert(addr.clone(), InspContact {
             uuid: uuid.clone(),
@@ -125,7 +132,7 @@ impl ContactManagerManager for InspLink {
     }
     fn store(&mut self) -> &mut Store {
         &mut self.store
-    }
+    } 
     fn resolve_nick(&self, nick: &str) -> Option<PduAddress> {
         for (uuid, user) in self.users.iter() {
             if user.nick == nick {
@@ -137,19 +144,36 @@ impl ContactManagerManager for InspLink {
         None
     }
     fn forward_cmd(&mut self, a: &PduAddress, cmd: ContactManagerCommand) -> Result<()> {
-        if let Some(ct) = self.contacts.get_mut(&a) {
+        if self.contacts.get(a).is_some() {
             match cmd {
                 ContactManagerCommand::UpdateAway(text) => {
+                    let ct = self.contacts.get(a).unwrap();
                     self.outbox.push(Message::new(Some(&ct.uuid), "AWAY", vec![], text.as_ref().map(|x| x as &str))?);
                 },
-                ContactManagerCommand::ChangeNick(st) => {
+                ContactManagerCommand::ChangeNick(st, src) => {
+                    {
+                        // Abort if we're trying to change nick to something
+                        // it already is, because otherwise it'll collide.
+                        let ct = self.contacts.get(a).unwrap();
+                        let u = self.users.get(&ct.uuid).unwrap();
+                        if u.nick == st {
+                            warn!("Tried to uselessly change nick for {}!", st);
+                            return Ok(())
+                        }
+                    }
+                    let nick = match self.check_nick_for_collisions(&st) {
+                        Some(n) => n,
+                        None => st.into()
+                    };
+                    let ct = self.contacts.get(a).unwrap();
                     let u = self.users.get_mut(&ct.uuid).unwrap();
-                    u.nick = st.clone();
+                    u.nick = nick.clone();
                     let ts = chrono::Utc::now().timestamp().to_string();
-                    self.outbox.push(Message::new(Some(&ct.uuid), "NICK", vec![&st, &ts], None)?);
-                    self.store.update_recipient_nick(&a, &st)?;
+                    self.outbox.push(Message::new(Some(&ct.uuid), "NICK", vec![&nick, &ts], None)?);
+                    self.store.update_recipient_nick(&a, &nick, src)?;
                 },
                 ContactManagerCommand::SetWhatsapp(wam) => {
+                    let mut ct = self.contacts.get_mut(a).unwrap();
                     ct.wa_mode = wam;
                     self.set_wa_state(&a, wam)?;
                 },
@@ -163,9 +187,18 @@ impl ContactManagerManager for InspLink {
     }
 }
 impl ControlCommon for InspLink {
-    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand> { &mut self.cf_tx }
-    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand> { &mut self.wa_tx }
-    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand> { &mut self.m_tx }
+    fn cf_send(&mut self, c: ContactFactoryCommand) {
+        self.cf_tx.unbounded_send(c)
+            .unwrap()
+    }
+    fn wa_send(&mut self, c: WhatsappCommand) { 
+        self.wa_tx.unbounded_send(c)
+            .unwrap()
+    }
+    fn m_send(&mut self, c: ModemCommand) {
+        self.m_tx.unbounded_send(c)
+            .unwrap()
+    }
     fn control_response(&mut self, msg: &str) -> Result<()> {
         if let Some(admu) = self.admin_uuid() {
             let line = Message::new(Some(&self.control_uuid), "NOTICE", vec![&admu], Some(msg))?;
@@ -307,6 +340,31 @@ impl InspLink {
             user.displayed_hostname = host;
         }
         Ok(())
+    }
+    fn nick_exists(&self, nick: &str) -> bool {
+        for (_, user) in self.users.iter() {
+            if user.nick == nick {
+                return true;
+            }
+        }
+        false
+    }
+    fn check_nick_for_collisions(&self, nick: &str) -> Option<String> {
+        if self.nick_exists(nick) {
+            debug!("Nick {} collides with pre-existing nick; finding a new one", nick);
+            let mut idx = 0;
+            let mut newnick = format!("{}{}", nick, idx);
+            while self.nick_exists(&newnick) {
+                debug!("New nick {} also collides!", newnick);
+                idx += 1;
+                newnick = format!("{}{}", nick, idx);
+            }
+            info!("Nick {} collides; using non-colliding nick {} instead", nick, newnick);
+            return Some(newnick);
+        }
+        else {
+            None
+        }
     }
     fn remove_user(&mut self, uuid: &str, recreate: bool) -> Result<()> {
         debug!("Removing user {} with recreate {}", uuid, recreate);
@@ -482,6 +540,7 @@ impl InspLink {
                     "ENDBURST" => {
                         if self.remote_sid == prefix {
                             debug!("Received end of netburst");
+                            self.do_quasiburst()?;
                             self.state = LinkState::Linked;
                             self.on_linked()?;
                         }
@@ -549,8 +608,7 @@ impl InspLink {
         for grp in self.store.get_all_groups()? {
             for part in grp.participants {
                 if let Some(recip) = self.store.get_recipient_by_id_opt(part)? {
-                    let num = util::un_normalize_address(&recip.phone_number)
-                        .ok_or(format_err!("invalid address {} in db", recip.phone_number))?;
+                    let num = recip.get_addr()?;
                     if let Some(ct) = self.contacts.get(&num) {
                         let mode = if grp.admins.contains(&part) {
                             "+o"
@@ -680,8 +738,7 @@ impl InspLink {
         };
         for msg in self.store.get_all_messages()? {
             debug!("Processing message #{}", msg.id);
-            let addr = util::un_normalize_address(&msg.phone_number)
-                .ok_or(format_err!("invalid address {} in db", msg.phone_number))?;
+            let addr = msg.get_addr()?;
             if !self.has_contact(&addr) {
                 if !self.request_contact(addr.clone(), msg.source)? {
                     continue;
@@ -738,10 +795,13 @@ impl InspLink {
         self.users.insert(uuid.clone(), cb);
         let line = self.make_uid_line(&uuid)?;
         self.send(line);
+        self.send_sid_line("ENDBURST", vec![], None)?;
+        Ok(())
+    }
+    fn do_quasiburst(&mut self) -> Result<()> {
         for recip in self.store.get_all_recipients()? {
             self.setup_recipient(recip)?;
         }
-        self.send_sid_line("ENDBURST", vec![], None)?;
         Ok(())
     }
 }

@@ -15,6 +15,7 @@ pub struct InspUser {
     // modes in +abc [args] format
     pub modes: String,
     pub gecos: String,
+    pub ours: bool
 }
 impl InspUser {
     pub fn new_from_uid_line(args: Vec<String>, suffix: Option<String>) -> Result<(String, Self)> {
@@ -35,7 +36,8 @@ impl InspUser {
             ip: args.next().unwrap(),
             signon_time: args.next().unwrap().parse()?,
             modes: args.collect::<Vec<_>>().join(" "),
-            gecos: suffix.unwrap()
+            gecos: suffix.unwrap(),
+            ours: false
         };
         Ok((uuid, ret))
     }
@@ -51,7 +53,8 @@ impl InspUser {
             ip: "0.0.0.0".into(),
             signon_time: ts,
             modes: "+i".into(),
-            gecos: "sms-irc control bot".into()
+            gecos: "sms-irc control bot".into(),
+            ours: true
         }
     }
     pub fn new_from_recipient(a: PduAddress, nick: String, hostname: &str) -> Self {
@@ -67,7 +70,8 @@ impl InspUser {
             ip: "0.0.0.0".into(),
             signon_time: ts,
             modes: "+i".into(),
-            gecos: format!("{}", a)
+            gecos: format!("{}", a),
+            ours: true
         }
     }
 }

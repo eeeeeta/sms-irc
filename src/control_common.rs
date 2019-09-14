@@ -1,17 +1,17 @@
 //! Common behaviours for the control bot.
 
-use futures::sync::mpsc::UnboundedSender;
 use crate::comm::{WhatsappCommand, ContactFactoryCommand, ContactManagerCommand, ModemCommand};
 use crate::util::Result;
+use crate::models::Recipient;
 use crate::admin::{InspCommand, AdminCommand, GhostCommand, GroupCommand, ContactCommand};
 use crate::admin::ModemCommand as AdminModemCommand;
 use crate::admin::WhatsappCommand as AdminWhatsappCommand;
 use crate::models::Message;
 
 pub trait ControlCommon {
-    fn wa_tx(&mut self) -> &mut UnboundedSender<WhatsappCommand>;
-    fn cf_tx(&mut self) -> &mut UnboundedSender<ContactFactoryCommand>;
-    fn m_tx(&mut self) -> &mut UnboundedSender<ModemCommand>;
+    fn wa_send(&mut self, c: WhatsappCommand);
+    fn cf_send(&mut self, c: ContactFactoryCommand);
+    fn m_send(&mut self, c: ModemCommand);
     /// Process the InspIRCd-specific command specified.
     ///
     /// Returns `true` if the command was processed, or `false` if it wasn't (i.e. we aren't
@@ -46,23 +46,20 @@ pub trait ControlCommon {
                 match gc {
                     // This bit looks silly, because it is (see above)
                     ChangeNick(n) => {
-                        c = Some(ContactManagerCommand::ChangeNick(n));
+                        c = Some(ContactManagerCommand::ChangeNick(n, Recipient::NICKSRC_USER));
                     },
                     SetWhatsapp(n) => {
                         c = Some(ContactManagerCommand::SetWhatsapp(n));
                     },
                     PresenceSubscribe => {
-                        self.cf_tx().unbounded_send(ContactFactoryCommand::SubscribePresenceByNick(nick.clone()))
-                            .unwrap();
+                        self.cf_send(ContactFactoryCommand::SubscribePresenceByNick(nick.clone()));
                     },
                     Remove => {
-                        self.cf_tx().unbounded_send(ContactFactoryCommand::DropContactByNick(nick.clone()))
-                            .unwrap();
+                        self.cf_send(ContactFactoryCommand::DropContactByNick(nick.clone()));
                     }
                 }
                 if let Some(c) = c {
-                    self.cf_tx().unbounded_send(ContactFactoryCommand::ForwardCommandByNick(nick, c))
-                        .unwrap();
+                    self.cf_send(ContactFactoryCommand::ForwardCommandByNick(nick, c));
                 }
                 self.control_response("Ghost command executed.")?;
             },
@@ -75,8 +72,7 @@ pub trait ControlCommon {
                     Reinit => ModemCommand::ForceReinit,
                     TempPath(s) => ModemCommand::UpdatePath(s),
                 };
-                self.m_tx().unbounded_send(cts)
-                    .unwrap();
+                self.m_send(cts);
             },
             AdminCommand::Whatsapp(wac) => {
                 use self::AdminWhatsappCommand::*;
@@ -88,8 +84,7 @@ pub trait ControlCommon {
                     UpdateAll => WhatsappCommand::GroupUpdateAll,
                     PrintAcks => WhatsappCommand::PrintAcks
                 };
-                self.wa_tx().unbounded_send(cts)
-                    .unwrap();
+                self.wa_send(cts);
             },
             AdminCommand::Group(gc) => {
                 use self::GroupCommand::*;
@@ -98,8 +93,7 @@ pub trait ControlCommon {
                     BridgeWhatsapp { jid, chan } => WhatsappCommand::GroupAssociate(jid, chan),
                     Unbridge(ch) => WhatsappCommand::GroupRemove(ch)
                 };
-                self.wa_tx().unbounded_send(cts)
-                    .unwrap();
+                self.wa_send(cts);
             },
             AdminCommand::Contact(cc) => {
                 use self::ContactCommand::*;
@@ -107,8 +101,7 @@ pub trait ControlCommon {
                     NewSms(a) => (a, Message::SOURCE_SMS),
                     NewWhatsapp(a) => (a, Message::SOURCE_WA)
                 };
-                self.cf_tx().unbounded_send(ContactFactoryCommand::QueryContact(addr, src))
-                    .unwrap();
+                self.cf_send(ContactFactoryCommand::QueryContact(addr, src));
             },
             AdminCommand::Insp(ic) => {
                 if !self.process_insp(ic)? {

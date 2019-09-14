@@ -12,6 +12,7 @@ use whatsappweb::session::PersistentSession;
 use whatsappweb::Jid;
 use crate::util::{self, Result};
 use chrono::NaiveDateTime;
+use regex::Regex;
 use crate::models::*;
 
 embed_migrations!();
@@ -26,9 +27,31 @@ impl Store {
         let pool = Pool::builder()
             .build(manager)?;
         embedded_migrations::run(&*pool.get()?)?;
-        Ok(Self {
+        let mut ret = Self {
             inner: Arc::new(pool)
-        })
+        };
+        let sourceless = ret.get_recipients_with_nicksrc(Recipient::NICKSRC_MIGRATED)?;
+        if sourceless.len() > 0 {
+            warn!("Adding nickname sources for migrated recipients");
+            // Use heuristics to match nicknames which look like they've been
+            // automatically generated
+            lazy_static! {
+                static ref DEFAULT_RE: Regex = Regex::new(r#"I\d+"#).unwrap();
+            }
+            for r in sourceless {
+                let addr = r.get_addr()?;
+                let newsrc = if DEFAULT_RE.is_match(&r.nick) {
+                    Recipient::NICKSRC_AUTO
+                }
+                else {
+                    // We can't assume much, so set to NICKSRC_USER so
+                    // nothing overwrites it
+                    Recipient::NICKSRC_USER
+                };
+                ret.update_recipient_nick(&addr, &r.nick, newsrc)?;
+            }
+        }
+        Ok(ret)
     }
     pub fn store_sms_message(&mut self, addr: &PduAddress, pdu: &[u8], csms_data: Option<i32>) -> Result<Message> {
         use crate::schema::messages;
@@ -153,7 +176,8 @@ impl Store {
             nick,
             whatsapp: false,
             avatar_url: None,
-            notify: None
+            notify: None,
+            nicksrc: Recipient::NICKSRC_AUTO
         };
         let conn = self.inner.get()?;
 
@@ -162,7 +186,7 @@ impl Store {
             .get_result(&*conn)?;
         Ok(res)
     }
-    pub fn store_wa_recipient(&mut self, addr: &PduAddress, nick: &str, notify: Option<&str>) -> Result<Recipient> {
+    pub fn store_wa_recipient(&mut self, addr: &PduAddress, nick: &str, notify: Option<&str>, nicksrc: i32) -> Result<Recipient> {
         use crate::schema::recipients;
 
         let num = util::normalize_address(addr);
@@ -171,7 +195,8 @@ impl Store {
             nick,
             whatsapp: true,
             avatar_url: None,
-            notify: notify
+            notify: notify,
+            nicksrc
         };
         let conn = self.inner.get()?;
 
@@ -191,14 +216,14 @@ impl Store {
             .execute(&*conn)?;
         Ok(())
     }
-    pub fn update_recipient_nick(&mut self, addr: &PduAddress, n: &str) -> Result<()> {
+    pub fn update_recipient_nick(&mut self, addr: &PduAddress, n: &str, src: i32) -> Result<()> {
         use crate::schema::recipients::dsl::*;
         let conn = self.inner.get()?;
         let num = util::normalize_address(addr);
 
         ::diesel::update(recipients)
             .filter(phone_number.eq(num))
-            .set(nick.eq(n))
+            .set((nick.eq(n), nicksrc.eq(src)))
             .execute(&*conn)?;
         Ok(())
     }
@@ -246,6 +271,15 @@ impl Store {
         let conn = self.inner.get()?;
 
         let res = recipients
+            .load(&*conn)?;
+        Ok(res)
+    }
+    pub fn get_recipients_with_nicksrc(&mut self, ns: i32) -> Result<Vec<Recipient>> {
+        use crate::schema::recipients::dsl::*;
+        let conn = self.inner.get()?;
+
+        let res = recipients
+            .filter(nicksrc.eq(ns))
             .load(&*conn)?;
         Ok(res)
     }

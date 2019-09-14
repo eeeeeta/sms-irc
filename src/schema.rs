@@ -30,6 +30,7 @@ table! {
         whatsapp -> Bool,
         avatar_url -> Nullable<Varchar>,
         notify -> Nullable<Varchar>,
+        nicksrc -> Int4,
     }
 }
 

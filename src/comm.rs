@@ -54,7 +54,7 @@ pub enum ContactManagerCommand {
     ProcessMessages,
     ProcessGroups,
     UpdateAway(Option<String>),
-    ChangeNick(String),
+    ChangeNick(String, i32),
     SetWhatsapp(bool)
 }
 #[derive(Clone)]

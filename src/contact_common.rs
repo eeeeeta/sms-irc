@@ -4,7 +4,7 @@ use huawei_modem::pdu::PduAddress;
 use crate::models::{Recipient, Message};
 use crate::store::Store;
 use crate::comm::ContactManagerCommand;
-use crate::util::{self, Result};
+use crate::util::Result;
 use futures::sync::mpsc::UnboundedSender;
 use crate::comm::{WhatsappCommand, ModemCommand, ControlBotCommand};
 
@@ -19,8 +19,7 @@ pub trait ContactManagerManager {
     fn forward_cmd(&mut self, _: &PduAddress, _: ContactManagerCommand) -> Result<()>;
     fn resolve_nick(&self, _: &str) -> Option<PduAddress>;
     fn setup_recipient(&mut self, recip: Recipient) -> Result<()> {
-        let addr = util::un_normalize_address(&recip.phone_number)
-            .ok_or(format_err!("invalid num {} in db", recip.phone_number))?;
+        let addr = recip.get_addr()?;
         debug!("Setting up recipient for {} (nick {})", addr, recip.nick);
         if self.has_contact(&addr) {
             debug!("Not doing anything; contact already exists");
