@@ -2539,7 +2539,7 @@ dependencies = [
 [[package]]
 name = "whatsappweb-eta"
 version = "0.5.0-pre1"
-source = "git+https://git.theta.eu.org/whatsappweb-rs.git/#11a087310edd788e12ddc4b3de33e319be7138c1"
+source = "git+https://git.theta.eu.org/whatsappweb-rs.git/#e0af8589e1ed3b8622c166e9facee19c563c906e"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
