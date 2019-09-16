@@ -95,6 +95,10 @@ impl WaAckTracker {
     pub fn on_message_ack(&mut self, ack: MessageAck) {
         if let Some(mss) = self.outgoing_messages.get_mut(&ack.id.0) {
             debug!("Ack known message {} at level: {:?}", ack.id.0, ack.level);
+            if let MessageAckLevel::Error = ack.level {
+                warn!("Message {} acked at Error level!", ack.id.0);
+                Self::send_fail(&mut self.cb_tx, format!("Error: WhatsApp reported an error in sending message ID {}!", ack.id.0));
+            }
             mss.ack_level = Some(ack.level);
         }
         else {
