@@ -364,6 +364,9 @@ impl WhatsappManager {
         };
         let group = match group {
             Some(gid) => {
+                if gid.id == "status" {
+                    return Ok(());
+                }
                 if let Some(grp) = self.store.get_group_by_jid_opt(&gid)? {
                     Some(grp.id)
                 }
@@ -653,6 +656,9 @@ impl WhatsappManager {
     }
     fn on_contact_change(&mut self, ct: WaContact) -> Result<()> {
         let jid = ct.jid.clone();
+        if jid.id == "status" {
+            return Ok(());
+        }
         if let Some(addr) = util::jid_to_address(&jid) {
             self.contacts.insert(ct.jid.clone(), ct);
             let recip = self.get_wa_recipient(&jid)?;
