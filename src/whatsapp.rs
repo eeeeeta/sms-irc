@@ -656,7 +656,7 @@ impl WhatsappManager {
     }
     fn on_contact_change(&mut self, ct: WaContact) -> Result<()> {
         let jid = ct.jid.clone();
-        if jid.id == "status" {
+        if jid.id == "status" || jid.is_group {
             return Ok(());
         }
         if let Some(addr) = util::jid_to_address(&jid) {
@@ -812,12 +812,20 @@ impl WhatsappManager {
                 }
             },
             ProfileStatus { jid, status, was_request } => {
+                if jid.is_group {
+                    warn!("Got profile status for non-user jid {}", jid);
+                    return;
+                }
                 let recip = self.get_wa_recipient(&jid)?;
                 if !was_request {
                     info!("{} changed their status to: {}", recip.nick, status);
                 }
             },
             PictureChange { jid, removed } => {
+                if jid.is_group {
+                    warn!("Got picture change for non-user jid {}", jid);
+                    return;
+                }
                 let recip = self.get_wa_recipient(&jid)?;
                 if !removed {
                     info!("{} changed their profile photo.", recip.nick);
