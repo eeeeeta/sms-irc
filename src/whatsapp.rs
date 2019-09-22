@@ -814,7 +814,7 @@ impl WhatsappManager {
             ProfileStatus { jid, status, was_request } => {
                 if jid.is_group {
                     warn!("Got profile status for non-user jid {}", jid);
-                    return;
+                    return Ok(());
                 }
                 let recip = self.get_wa_recipient(&jid)?;
                 if !was_request {
@@ -824,7 +824,7 @@ impl WhatsappManager {
             PictureChange { jid, removed } => {
                 if jid.is_group {
                     warn!("Got picture change for non-user jid {}", jid);
-                    return;
+                    return Ok(());
                 }
                 let recip = self.get_wa_recipient(&jid)?;
                 if !removed {
