@@ -637,6 +637,7 @@ impl WhatsappManager {
         Ok(())
     }
     fn on_established(&mut self, jid: Jid, ps: WaPersistentSession) -> Result<()> {
+        self.our_jid = Some(jid.clone());
         if self.our_jid != self.prev_jid {
             info!("Logged in as {}.", jid);
             if self.prev_jid.is_some() {
@@ -657,7 +658,6 @@ impl WhatsappManager {
         }
         self.store.store_wa_persistence(ps.clone())?;
         self.conn.set_persistent(Some(ps));
-        self.our_jid = Some(jid.clone());
         self.prev_jid = Some(jid);
         self.connected = true;
         Ok(())
