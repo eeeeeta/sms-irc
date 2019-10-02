@@ -5,7 +5,7 @@ use whatsappweb::Contact as WaContact;
 use whatsappweb::Chat as WaChat;
 use whatsappweb::GroupMetadata;
 use whatsappweb::message::ChatMessage as WaMessage;
-use whatsappweb::message::{ChatMessageContent, Peer};
+use whatsappweb::message::{ChatMessageContent, Peer, MessageId};
 use whatsappweb::session::PersistentSession as WaPersistentSession;
 use whatsappweb::event::WaEvent;
 use whatsappweb::req::WaRequest;
@@ -51,6 +51,7 @@ pub struct WhatsappManager {
     mark_read: bool,
     track_presence: bool,
     our_jid: Option<Jid>,
+    prev_jid: Option<Jid>,
     outbox: VecDeque<WaRequest>
 }
 impl Future for WhatsappManager {
@@ -131,6 +132,7 @@ impl WhatsappManager {
             chats: HashMap::new(),
             connected: false,
             our_jid: None,
+            prev_jid: None,
             presence_requests: HashMap::new(),
             outbox: VecDeque::new(),
             backlog_start,
@@ -248,12 +250,21 @@ impl WhatsappManager {
         self.cb_respond("NB: The code is only valid for a few seconds, so scan quickly!");
         Ok(())
     }
+    fn queue_message(&mut self, content: ChatMessageContent, jid: Jid) {
+        let mid = MessageId::generate();
+        debug!("Queued send to {}: message ID {}", jid, mid.0);
+        self.ackp.register_send(jid, content, mid.0, true);
+        if self.conn.is_disabled() {
+            let err = "Warning: WhatsApp Web is currently not set up, but you've tried to send something.";
+            self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(err.into())).unwrap();
+        }
+    }
     fn send_message(&mut self, content: ChatMessageContent, jid: Jid) -> Result<()> {
         let (c, j) = (content.clone(), jid.clone());
         let m = WaMessage::new(jid, content);
         debug!("Send to {}: message ID {}", j, m.id.0);
         self.store.store_wa_msgid(m.id.0.clone())?;
-        self.ackp.register_send(j.clone(), c, m.id.0.clone());
+        self.ackp.register_send(j.clone(), c, m.id.0.clone(), false);
         self.outbox.push_back(WaRequest::SendMessage(m));
         if !j.is_group && self.track_presence {
             let mut update = true;
@@ -276,16 +287,15 @@ impl WhatsappManager {
     fn send_direct_message(&mut self, addr: PduAddress, content: String) -> Result<()> {
         debug!("Sending direct message to {}...", addr);
         trace!("Message contents: {}", content);
-        if !self.connected || !self.conn.is_connected() {
-            warn!("Tried to send WA message to {} while disconnected!", addr);
-            self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Failed to send to WA contact {}: disconnected from server", addr)))
-                .unwrap();
-            return Ok(());
-        }
         match Jid::from_phonenumber(format!("{}", addr)) {
             Ok(jid) => {
                 let content = ChatMessageContent::Text(content);
-                self.send_message(content, jid)?;
+                if !self.connected || !self.conn.is_connected() {
+                    self.queue_message(content, jid);
+                }
+                else {
+                    self.send_message(content, jid)?;
+                }
             },
             Err(e) => {
                 warn!("Couldn't send WA message to {}: {}", addr, e);
@@ -298,16 +308,15 @@ impl WhatsappManager {
     fn send_group_message(&mut self, chan: String, content: String) -> Result<()> {
         debug!("Sending message to group with chan {}...", chan);
         trace!("Message contents: {}", content);
-        if !self.connected || !self.conn.is_connected() {
-            warn!("Tried to send WA message to group {} while disconnected!", chan);
-            self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(format!("Failed to send to group {}: disconnected from server", chan)))
-                .unwrap();
-            return Ok(());
-        }
         if let Some(grp) = self.store.get_group_by_chan_opt(&chan)? {
             let jid = grp.jid.parse().expect("bad jid in DB");
             let content = ChatMessageContent::Text(content);
-            self.send_message(content, jid)?;
+            if !self.connected || !self.conn.is_connected() {
+                self.queue_message(content, jid);
+            }
+            else {
+                self.send_message(content, jid)?;
+            }
         }
         else {
             error!("Tried to send WA message to nonexistent group {}", chan);
@@ -628,15 +637,33 @@ impl WhatsappManager {
         Ok(())
     }
     fn on_established(&mut self, jid: Jid, ps: WaPersistentSession) -> Result<()> {
-        info!("Logged in as {}.", jid);
+        if self.our_jid != self.prev_jid {
+            info!("Logged in as {}.", jid);
+            if self.prev_jid.is_some() {
+                warn!("Logged in as a different phone number (prev was {})!", self.prev_jid.as_ref().unwrap());
+                let err = "Warning: You've logged in with a different phone number.";
+                self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(err.into())).unwrap();
+            }
+        }
+        else {
+            debug!("Logged in again after connection loss.");
+        }
+        let unsent = self.ackp.extract_unsent();
+        if unsent.len() > 0 {
+            info!("Sending {} messages sent while offline", unsent.len());
+        }
+        for mss in unsent {
+            self.send_message(mss.content, mss.destination)?;
+        }
         self.store.store_wa_persistence(ps.clone())?;
         self.conn.set_persistent(Some(ps));
-        self.our_jid = Some(jid);
+        self.our_jid = Some(jid.clone());
+        self.prev_jid = Some(jid);
         self.connected = true;
         Ok(())
     }
     fn on_wa_error(&mut self, err: WaError) {
-        warn!("WA connection failed: {}", err);
+        debug!("WA connection failed: {}", err);
         if let WaError::Disconnected(reason) = err {
             use self::WaDisconnectReason::*;
             let reason_text = match reason {

@@ -37,6 +37,14 @@ impl WebConnectionWrapper {
             cfg
         }
     }
+    pub fn is_disabled(&self) -> bool {
+        if let WrapperState::Disabled = self.inner {
+            true
+        }
+        else {
+            false
+        }
+    }
     pub fn disable(&mut self) {
         self.inner = WrapperState::Disabled;
     }
@@ -60,7 +68,7 @@ impl WebConnectionWrapper {
         }
     }
     fn initialize(&mut self) {
-        info!("Connecting to WhatsApp Web...");
+        debug!("Connecting to WhatsApp Web...");
         let fut: Box<dyn Future<Item = WebConnection, Error = WaError>> = match self.persist.clone() {
             Some(p) => Box::new(WebConnection::connect_persistent(p)),
             None => Box::new(WebConnection::connect_new())
@@ -93,7 +101,7 @@ impl Stream for WebConnectionWrapper {
                 Initializing(mut fut) => {
                     match fut.poll() {
                         Ok(Async::Ready(c)) => {
-                            info!("Connected to WhatsApp Web.");
+                            debug!("Connected to WhatsApp Web.");
                             self.inner = Running(c);
                         },
                         Ok(Async::NotReady) => {
@@ -101,7 +109,7 @@ impl Stream for WebConnectionWrapper {
                             return Ok(Async::NotReady);
                         },
                         Err(e) => {
-                            warn!("Failed to connect to WA: {}", e);
+                            warn!("Failed to connect to WhatsApp: {}", e);
                             self.backoff();
                         }
                     }

@@ -13,11 +13,13 @@ use failure::Error;
 
 use crate::comm::{ControlBotCommand, InitParameters};
 
-struct MessageSendStatus {
+#[derive(Clone)]
+pub struct MessageSendStatus {
     ack_level: Option<MessageAckLevel>,
     sent_ts: DateTime<Utc>,
-    content: ChatMessageContent,
-    destination: Jid,
+    pub content: ChatMessageContent,
+    pub destination: Jid,
+    unsent: bool,
     alerted: bool,
     alerted_pending: bool,
 }
@@ -56,16 +58,25 @@ impl WaAckTracker {
             cb_tx, timer
         }
     }
-    pub fn register_send(&mut self, to: Jid, content: ChatMessageContent, mid: String) {
+    pub fn register_send(&mut self, to: Jid, content: ChatMessageContent, mid: String, unsent: bool) {
         let mss = MessageSendStatus {
             ack_level: None,
             sent_ts: Utc::now(),
             content,
             destination: to,
+            unsent: unsent,
             alerted: false,
             alerted_pending: false
         };
         self.outgoing_messages.insert(mid, mss);
+    }
+    pub fn extract_unsent(&mut self) -> Vec<MessageSendStatus> {
+        let ret = self.outgoing_messages.iter()
+            .filter(|(_, mss)| mss.unsent)
+            .map(|(_, x)| x.clone())
+            .collect();
+        self.outgoing_messages.retain(|_, mss| !mss.unsent);
+        ret
     }
     pub fn print_acks(&mut self) -> Vec<String> {
         let now = Utc::now();
@@ -118,7 +129,13 @@ impl WaAckTracker {
             if mss.ack_level.is_none() {
                 if delta_ms >= self.ack_warn && !mss.alerted {
                     warn!("Message {} has been un-acked for {} seconds!", mid, delta.num_seconds());
-                    Self::send_fail(&mut self.cb_tx, format!("Warning: Sending message ID {} has failed, or is taking longer than usual!", mid));
+                    if mss.unsent {
+                        warn!("(still disconnected)");
+                        Self::send_fail(&mut self.cb_tx, format!("Warning: Message ID {} is still unsent, because we aren't connected to WhatsApp Web.", mid));
+                    }
+                    else {
+                        Self::send_fail(&mut self.cb_tx, format!("Warning: Sending message ID {} has failed, or is taking longer than usual!", mid));
+                    }
                     mss.alerted = true;
                 }
             }
