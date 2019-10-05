@@ -678,6 +678,15 @@ impl WhatsappManager {
                 self.conn.disable();
             }
         }
+        if let WaError::StatusCode(sc) = err {
+            if sc == 401 { 
+                warn!("Disconnected from WhatsApp due to 401");
+                let err = "Error: WhatsApp Web credentials are invalid. Use the WHATSAPP SETUP command to restore connectivity.";
+                self.cb_tx.unbounded_send(ControlBotCommand::ReportFailure(err.into()))
+                    .unwrap();
+                self.conn.disable();
+            }
+        }
         self.our_jid = None;
         self.connected = false;
     }
