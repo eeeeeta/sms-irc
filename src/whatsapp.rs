@@ -706,13 +706,22 @@ impl WhatsappManager {
             if recip.nick != new_nick {
                 debug!("New nick '{}' (src {}) for recipient {} (from '{}', src {})", new_nick, newsrc, addr, recip.nick, recip.nicksrc);
                 let should_update = match (recip.nicksrc, newsrc) {
+                    // Migrated nicks should always be changed.
                     (Recipient::NICKSRC_MIGRATED, _) => true,
+                    // Don't replace ugly phone numbers with more ugly phone numbers.
+                    (Recipient::NICKSRC_AUTO, Recipient::NICKSRC_AUTO) => false,
+                    // But replace ugly phone numbers with anything else!
                     (Recipient::NICKSRC_AUTO, _) => true,
+                    // Replace WA notify (i.e. name the contact gave themselves) with WA contact
+                    // (i.e. name the user gave the contact on their phone's address book)
                     (Recipient::NICKSRC_WA_NOTIFY, Recipient::NICKSRC_WA_CONTACT) => true,
+                    // Allow users to update their address book names.
+                    (Recipient::NICKSRC_WA_CONTACT, Recipient::NICKSRC_WA_CONTACT) => true,
+                    // Other changes are probably unwanted.
                     _ => false
                 };
                 if should_update && self.autoupdate_nicks {
-                    info!("Automatically updating nick for {} to {}", addr, new_nick);
+                    info!("Automatically updating nick for {} to {} (oldsrc {}, newsrc {})", addr, new_nick, recip.nicksrc, newsrc);
                     let cmd = ContactFactoryCommand::ForwardCommand(
                         addr,
                         crate::comm::ContactManagerCommand::ChangeNick(new_nick, newsrc)
