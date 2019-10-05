@@ -717,6 +717,8 @@ impl WhatsappManager {
                     (Recipient::NICKSRC_WA_NOTIFY, Recipient::NICKSRC_WA_CONTACT) => true,
                     // Allow users to update their address book names.
                     (Recipient::NICKSRC_WA_CONTACT, Recipient::NICKSRC_WA_CONTACT) => true,
+                    // Update WA notify values as well.
+                    (Recipient::NICKSRC_WA_NOTIFY, Recipient::NICKSRC_WA_NOTIFY) => true,
                     // Other changes are probably unwanted.
                     _ => false
                 };

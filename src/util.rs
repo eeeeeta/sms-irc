@@ -63,6 +63,7 @@ pub fn un_normalize_address(addr: &str) -> Option<PduAddress> {
 }
 pub fn string_to_irc_chan(inp: &str) -> String {
     let mut ret = String::new();
+    let inp = unidecode::unidecode(inp);
     for ch in inp.chars() {
         match ch {
             '_' => ret.push('_'),
@@ -77,6 +78,7 @@ pub fn string_to_irc_chan(inp: &str) -> String {
 }
 pub fn string_to_irc_nick(inp: &str) -> String {
     let mut ret = "S".to_string();
+    let inp = unidecode::unidecode(inp);
     for ch in inp.chars() {
         match ch {
             '+' => ret.push('I'),
