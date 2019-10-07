@@ -347,6 +347,9 @@ impl InspLink {
                 return true;
             }
         }
+        if nick == self.cfg.admin_nick {
+            return true;
+        }
         false
     }
     fn check_nick_for_collisions(&self, nick: &str) -> Option<String> {
