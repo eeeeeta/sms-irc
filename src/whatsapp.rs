@@ -406,10 +406,22 @@ impl WhatsappManager {
             from, group, content, quoted
         };
         let (msgs, is_media) = self.msgproc.process_wa_incoming(inc)?;
+        let num_msgs = msgs.len();
         for msg in msgs {
             self.store_message(&msg.from, &msg.text, msg.group, msg.ts)?;
         }
-        if !is_media {
+        // The > 0 check is here to avoid us storing a message ID when we actually never
+        // got the message, because it was sent as a missing-ciphertext stub earlier or
+        // something.
+        //
+        // Either way, we want to ensure that we send *something* for each message we're
+        // marking as seen! Otherwise things get dropped on the floor.
+        //
+        // (FIXME: actually expose this stub type in ww-rs and send it as an alert)
+        if num_msgs == 0 {
+            warn!("Message {} is empty (for now).", id.0);
+        }
+        else if !is_media {
             self.store.store_wa_msgid(id.0.clone())?;
         }
         if let Some(p) = peer {
