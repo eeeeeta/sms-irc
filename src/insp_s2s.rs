@@ -150,7 +150,7 @@ impl ContactManagerManager for InspLink {
                     let ct = self.contacts.get(a).unwrap();
                     self.outbox.push(Message::new(Some(&ct.uuid), "AWAY", vec![], text.as_ref().map(|x| x as &str))?);
                 },
-                ContactManagerCommand::ChangeNick(st, src) => {
+                ContactManagerCommand::ChangeNick(st, osrc) => {
                     {
                         // Abort if we're trying to change nick to something
                         // it already is, because otherwise it'll collide.
@@ -161,9 +161,9 @@ impl ContactManagerManager for InspLink {
                             return Ok(())
                         }
                     }
-                    let nick = match self.check_nick_for_collisions(&st) {
-                        Some(n) => n,
-                        None => st.into()
+                    let (nick, src) = match self.check_nick_for_collisions(&st) {
+                        Some(n) => (n, Recipient::NICKSRC_COLLISION),
+                        None => (st.into(), osrc)
                     };
                     let ct = self.contacts.get(a).unwrap();
                     let u = self.users.get_mut(&ct.uuid).unwrap();
